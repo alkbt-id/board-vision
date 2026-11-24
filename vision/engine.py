@@ -113,9 +113,11 @@ def _won(board: chess.Board, pv: list[chess.Move], me: chess.Color) -> int:
     return best
 
 
-def forcing(board: chess.Board) -> list[dict] | None:
+def forcing(board: chess.Board, credit: int = 0) -> list[dict] | None:
     """The forcing lines of the side to move in `board` that win beyond one move: a mate in 2..MATE_IN, or a check
-    after which he wins at least WIN pawns. [{"pv": [moves], "mate": n | None}] from the engine's three best lines;
+    after which he wins at least WIN pawns more than `credit` — what the other side has just taken with the move that
+    led here (winning back your own capture, Qxb6 Rxf1+ Bxf1 axb6, is not a threat: the user, 2026-11-24, «и в чем моя
+    ошибка?» — Qxb6 was the best move). [{"pv": [moves], "mate": n | None}] from the engine's three best lines;
     None without the engine."""
     global _engine
     if board.is_game_over():
@@ -138,7 +140,7 @@ def forcing(board: chess.Board) -> list[dict] | None:
         mate = score.mate() if score.is_mate() else None
         if mate is not None and 2 <= mate <= MATE_IN:
             out.append({"pv": pv[: 2 * mate - 1], "mate": mate})
-        elif (mate is None and board.gives_check(pv[0]) and _won(board, pv, me) >= WIN
+        elif (mate is None and board.gives_check(pv[0]) and _won(board, pv, me) - credit >= WIN
               and (score.score() or 0) - 100 * _material(board, me) >= WINNING):  # better than the material now
             out.append({"pv": pv[:PLIES], "mate": None})
     return out
