@@ -613,7 +613,7 @@ async function commitMove() {
 // a missed threat on the board: a red arrow from every piece that can take there (a mate: the mating move)
 function missedArrows(t) {
   if (t.piece === null && t.mate) return [{ orig: t.best.slice(0, 2), dest: t.best.slice(2, 4), brush: "red" }];
-  return (t.attackers || [t.best.slice(0, 2)]).map((a) => ({ orig: a, dest: t.target, brush: "red" }));
+  return [...(t.attackers || [t.best.slice(0, 2)]), ...(t.xray || [])].map((a) => ({ orig: a, dest: t.target, brush: "red" }));
 }
 // one row per item: the mark in its own column, the text (and the exchange in small print) next to it
 function reviewItems(res) {

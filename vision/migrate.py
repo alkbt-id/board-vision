@@ -6,6 +6,7 @@ from its stored arrows — so the rating (vision/rating.py, replayed from the an
 History:
   1  captures that win material (the whole exchange) and mates in one
   2  + a pawn walking in to queen (2026-11-24: the user drew b2→b1 and got «лишняя стрелка»)
+  3  + an arrow from a piece behind an attacker (a battery: Bc4 behind d5 on e6) counts (2026-11-24)
 """
 
 import json
@@ -14,7 +15,7 @@ import chess
 
 from . import events, store, threats
 
-RULE_VERSION = "2"
+RULE_VERSION = "3"
 
 
 def run() -> None:
@@ -22,7 +23,7 @@ def run() -> None:
         return
     items = changed = 0
     keys: dict[int, tuple[dict, chess.Board]] = {}
-    for row in store.q("SELECT id, fen, move, n_threats FROM items"):
+    for row in store.q("SELECT id, fen, move, n_threats FROM items WHERE source != 'ownmove'"):
         after = chess.Board(row["fen"])
         after.push(chess.Move.from_uci(row["move"]))
         answer = threats.analyse(after)

@@ -35,6 +35,22 @@ def _taken(board: chess.Board, move: chess.Move) -> int:
     return gain
 
 
+def xray(board: chess.Board, color: chess.Color, square: int) -> list[str]:
+    """`color`'s pieces lined up behind its direct attackers of `square` (a battery: a bishop behind a pawn, a rook
+    behind a rook) — they join the exchange as the line opens, so an arrow from them counts too."""
+    b = board.copy(stack=False)
+    seen = set(b.attackers(color, square))
+    front, out = set(seen), []
+    while front:
+        for s in front:
+            b.remove_piece_at(s)
+        new = set(b.attackers(color, square)) - seen
+        out += sorted(chess.square_name(s) for s in new)
+        seen |= new
+        front = new
+    return out
+
+
 def _order(board: chess.Board, move: chess.Move) -> int:
     return ORDER[board.piece_type_at(move.from_square) or chess.PAWN]
 
@@ -175,6 +191,7 @@ def opponent_key(board: chess.Board) -> dict:
                 "target": chess.square_name(square), "targets": [chess.square_name(square)],
                 "piece": piece.symbol().upper() if piece else None,
                 "attackers": sorted(chess.square_name(s) for s in t["attackers"]),
+                "xray": xray(board, board.turn, square),
                 "best": best.uci(), "san": board.san(best), "gain": t["gain"] or 0, "mate": t["mate"],
                 **({} if t["mate"] else {"exchange": exchange(board, best)}),
             })
@@ -208,7 +225,8 @@ def describe(threat: dict, after: chess.Board) -> str:
     if threat["piece"] is None:
         return f"мат: {threat['san']}"
     tail = ", и это мат" if threat["mate"] else ""
-    return f"{_who(after, threat['target'])} ← {', '.join(_who(after, s) for s in attackers)}{tail}"
+    behind = threat.get("xray") or []
+    return f"{_who(after, threat['target'])} ← {', '.join(_who(after, s) for s in [*attackers, *behind])}{tail}"
 
 
 def swap_text(ex: dict | None) -> str:
@@ -260,7 +278,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board) -> dict:
         hit = None
         for frm, to in ((a, b), (b, a)):
             t = by_square.get(to)
-            if t and frm in t["attackers"]:
+            if t and (frm in t["attackers"] or frm in (t.get("xray") or [])):
                 hit = t["target"]
                 break
         if hit:
@@ -333,7 +351,7 @@ def check_own(key: dict, arrows: list[dict], board: chess.Board) -> dict:
         hit = None
         for frm, to in ((a, b), (b, a)):
             t = by_square.get(to)
-            if t and frm in t["attackers"]:
+            if t and (frm in t["attackers"] or frm in (t.get("xray") or [])):
                 hit = t["target"]
                 break
         if hit:

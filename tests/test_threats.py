@@ -104,7 +104,7 @@ def test_review_spells_out_the_exchange():
     answer = threats.analyse(after)
     assert answer is not None
     got = threats.check(answer, [], after)
-    assert got["items"][0]["text"] == "конь e5 ← ладья e2"
+    assert got["items"][0]["text"] == "конь e5 ← ладья e2, ладья e1"
     assert got["items"][0]["detail"] == "взять обратно: Rxe5 Rxe5 Rxe5 → соперник всё равно +3"
     # one rook only: the knight is safe, and an arrow on it is explained by the exchange
     after = chess.Board("4r1k1/8/8/4n3/8/8/4R3/6K1 b - - 0 1")
@@ -154,3 +154,14 @@ def test_own_move_static_part_and_a_reply_item():
     got = threats.check_own(key, [{"from": "c5", "to": "d4"}, {"from": "h8", "to": "e8"}], after)
     assert got["ok"]
     assert "нападение на ферзь e5" in threats.describe_attack(item, after)
+
+
+def test_a_bishop_behind_a_pawn_is_an_attacker_too():
+    # 2026-11-24 on the iPad: after d4-d5 the pawn hits e6 and the bishop c4 stands behind it; both arrows count
+    after = chess.Board("rn1qkb1r/pp3ppp/4pn2/2pP3b/2B1P3/P1N2P2/1P4PP/R1BQK1NR b KQkq - 0 1")
+    answer = threats.analyse(after)
+    assert answer is not None
+    e6 = next(t for t in answer["threats"] if t["target"] == "e6")
+    assert e6["attackers"] == ["d5"] and e6["xray"] == ["c4"]
+    got = threats.check(answer, [{"from": "d5", "to": "e6"}, {"from": "c4", "to": "e6"}], after)
+    assert "e6" in got["found"] and not [x for x in got["extra"] if "e6" in (x["from"], x["to"])]
