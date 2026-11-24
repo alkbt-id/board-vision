@@ -11,6 +11,8 @@
   POST /api/refresh   download new positions now
   GET  /api/history   results per day
   GET  /api/progress  the progress chart: one point per session
+  POST /api/series/start | answer {series, arrows, ms} | move {series, uci, ms} | leave {series}
+                      a series against the bot (vision/series.py); the bot thinks in a worker thread
 """
 
 import contextlib
@@ -19,12 +21,13 @@ import time
 from pathlib import Path
 
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import config, events, migrate, session, sources, store
+from . import bot, config, events, migrate, series, session, sources, store
 
 WEB = Path(__file__).parent / "web"
 REFRESH_EVERY_MS = 12 * 3600 * 1000
@@ -43,6 +46,7 @@ def state() -> dict:
         "counts": store.counts(), "ready": sources.ready(), "import": dict(sources.STATUS),
         "answered": store.answered_count(), "today": (session.history(1) or [None])[0],
         "users": {"lichess": config.lichess_user(), "chesscom": config.chesscom_user()},
+        "series": {"length": series.length(), "best": series.best()},
     }
 
 
@@ -88,6 +92,34 @@ def post_refresh(_: dict) -> dict:
     return {"started": sources.start_background()}
 
 
+def threaded(fn):
+    """Like `guarded`, but the work (the bot's move) runs in a worker thread, not on the event loop."""
+    async def wrapper(request: Request):
+        try:
+            body = await request.json()
+            return JSONResponse(await run_in_threadpool(fn, body if isinstance(body, dict) else {}))
+        except (KeyError, ValueError, TypeError, RuntimeError) as e:
+            events.log("error", where=fn.__name__, text=str(e))
+            return JSONResponse({"error": str(e) or type(e).__name__}, status_code=400)
+    return wrapper
+
+
+def series_start(_: dict) -> dict:
+    return series.start()
+
+
+def series_answer(body: dict) -> dict:
+    return series.answer(str(body["series"]), list(body.get("arrows") or []), int(body.get("ms") or 0))
+
+
+def series_move(body: dict) -> dict:
+    return series.move(str(body["series"]), str(body["uci"]), int(body.get("ms") or 0))
+
+
+def series_leave(body: dict) -> dict:
+    return series.leave(str(body["series"]))
+
+
 async def get_history(_: Request):
     return JSONResponse(session.history(30))
 
@@ -117,6 +149,7 @@ async def lifespan(_app):
         yield
     finally:
         sources.STOPPING.set()
+        bot.close()
         events.log("app_stop")
 
 
@@ -133,6 +166,10 @@ app = Starlette(
         Route("/api/refresh", guarded(post_refresh), methods=["POST"]),
         Route("/api/history", get_history),
         Route("/api/progress", get_progress),
+        Route("/api/series/start", threaded(series_start), methods=["POST"]),
+        Route("/api/series/answer", threaded(series_answer), methods=["POST"]),
+        Route("/api/series/move", threaded(series_move), methods=["POST"]),
+        Route("/api/series/leave", threaded(series_leave), methods=["POST"]),
         Mount("/static", StaticFiles(directory=WEB)),
     ],
     lifespan=lifespan,

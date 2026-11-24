@@ -86,6 +86,16 @@ def line(e: dict) -> str | None:
             return (f"{t} ⚙ правило угроз v{e.get('version')}: позиций пересчитано {e.get('items')} (изменилось "
                     f"{e.get('items_changed')}), ответов перепроверено {e.get('answers')}: стали верными "
                     f"{e.get('now_right')}, стали неверными {e.get('now_wrong')}")
+        case "series_start":
+            return f"{t} ━━ серия {e.get('series')} · {e.get('length')} ходов бота · старт: {SOURCE.get(str(e.get('source')), 'начальная позиция')} · ты {'белыми' if e.get('user') == 'white' else 'чёрными'}"
+        case "bot_move":
+            return f"{t}   бот: {e.get('san')}"
+        case "user_move":
+            return f"{t}   ты: {e.get('san')} (думал {sec(e.get('ms'))})"
+        case "series_end":
+            s = e.get("summary") or {}
+            res = "без промахов" if s.get("clean") else f"промахов {s.get('misses')}"
+            return f"{t} ━━ серия: проверок {s.get('checks')}/{s.get('length')}, {res} → следующая {s.get('next')} ходов"
         case "session_exit":
             return f"{t} ━━ вышел на главный экран на позиции {e.get('index', 0) + 1}/{e.get('size')} (отвечено {e.get('answered')})"
         case "leave_click":

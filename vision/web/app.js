@@ -173,6 +173,7 @@ function snapToPiece(from, to) {
   return to;
 }
 wrap.addEventListener("pointerdown", (e) => {
+  if (S.phase === "move") return; // a series: the user moves a piece, chessground handles it
   if (e.pointerType === "mouse" && e.button !== 0) return; // the right button: chessground
   e.preventDefault();
   e.stopPropagation();
@@ -207,7 +208,7 @@ wrap.addEventListener("pointerup", (e) => {
 wrap.addEventListener("pointercancel", () => { drag.from = drag.id = null; preview(null); }, { capture: true });
 // chessground listens to mouse/touch events: keep the left button and touches away from it
 for (const t of ["mousedown", "touchstart"]) {
-  wrap.addEventListener(t, (e) => { if (t === "touchstart" || e.button === 0) e.stopPropagation(); }, { capture: true, passive: true });
+  wrap.addEventListener(t, (e) => { if (S.phase !== "move" && (t === "touchstart" || e.button === 0)) e.stopPropagation(); }, { capture: true, passive: true });
 }
 wrap.addEventListener("contextmenu", (e) => e.preventDefault());
 
@@ -348,17 +349,21 @@ const RULES = `
     <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле. И на поле мата в один ход. Нет угроз — «Угроз нет».</p>
     <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — «Отменить», Backspace или та же стрелка ещё раз.</p>
     <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
+    <p>Серия — партия с ботом уровня 1300: после каждого его хода отмечаешь угрозы, потом ходишь сам. Без промахов — следующая серия на ход длиннее.</p>
   </details>`;
 
 async function showStart() {
   S.phase = "start";
+  S.mode = "drill";
+  S.sv = null;
   S.sid = null;
   S.pos = null;
   arrows = [];
   setPick(null);
   S.reviewShapes = null;
   wrap.classList.add("locked");
-  cg.set({ fen: "start", orientation: "white", lastMove: undefined });
+  lockBoard();
+  cg.set({ fen: "start", orientation: "white", lastMove: undefined, check: false });
   cg.setShapes([]);
   cg.setAutoShapes([]);
   await loadProgress();
@@ -367,8 +372,10 @@ async function showStart() {
     <div class="chart" id="ch-rating"></div>
     <div class="chart" id="ch-time"></div>
     <button class="btn primary big" id="go" disabled>Начать</button>
+    <button class="btn big" id="series" disabled>Серия против бота</button>
     ${RULES}`;
   $("#go").addEventListener("click", startSession);
+  $("#series").addEventListener("click", startSeries);
   drawCharts();
   await refreshState();
 }
@@ -384,6 +391,12 @@ async function refreshState() {
   if (S.phase === "start" && go) {
     go.disabled = !st.ready;
     go.textContent = st.ready ? "Начать" : "Готовлю позиции…";
+    const sb = $("#series");
+    if (sb && st.series) {
+      sb.disabled = false;
+      const n = st.series.length;
+      sb.textContent = `Серия против бота · ${n} ${plural(n, "ход", "хода", "ходов")}${st.series.best ? ` · рекорд ${st.series.best}` : ""}`;
+    }
   }
   if (imp.running) stateTimer = setTimeout(refreshState, 3000);
 }
@@ -393,20 +406,11 @@ async function startSession() {
   try { showPosition(await api("/api/session", {})); } catch (e) { $("#go").textContent = e.message; $("#go").disabled = false; }
 }
 
-function showPosition(p) {
-  if (p.done) return showSummary(p.summary);
-  Object.assign(S, { sid: p.session, index: p.index, size: p.size, pos: p, phase: "wait", shownAt: 0, reviewShapes: null });
-  arrows = [];
-  setPick(null);
-  wrap.classList.remove("locked");
-  cg.setShapes([]);
-  cg.setAutoShapes([]);
-  cg.set({ animation: { enabled: false } });
-  cg.set({ fen: p.fen, orientation: p.orientation, turnColor: p.orientation === "white" ? "black" : "white", lastMove: undefined, check: false });
-  cg.set({ animation: { enabled: true, duration: 250 } });
+// the panel of a check: the question, the arrows drawn so far, «Отменить», and «Угроз нет» / «Проверить»
+function drawPanel(bar, task) {
   panel.innerHTML = `
-    ${barHTML(p.index, p.size)}
-    <p class="task" id="task">Соперник ходит…</p>
+    ${bar}
+    <p class="task" id="task">${task}</p>
     <div class="arrow-list" id="arrow-list" hidden></div>
     <button class="btn" id="undo" disabled title="Убрать последнюю стрелку (Backspace или ⌘Z)">Отменить</button>
     <button class="btn primary big" id="check" disabled>Угроз нет</button>`;
@@ -416,19 +420,36 @@ function showPosition(p) {
     if (chip) removeArrow(+chip.dataset.i, "list");
   });
   $("#check").addEventListener("click", check);
+}
+function startDrawing(item) {
+  S.phase = "draw";
+  S.shownAt = performance.now();
+  lastActive = performance.now();
+  $("#task").textContent = "Что под ударом?";
+  $("#check").disabled = false;
+  renderArrows();
+  log("move_shown", { item });
+}
+
+function showPosition(p) {
+  if (p.done) return showSummary(p.summary);
+  Object.assign(S, { mode: "drill", sid: p.session, index: p.index, size: p.size, pos: p, phase: "wait", shownAt: 0, reviewShapes: null });
+  arrows = [];
+  setPick(null);
+  wrap.classList.remove("locked");
+  cg.setShapes([]);
+  cg.setAutoShapes([]);
+  cg.set({ animation: { enabled: false } });
+  cg.set({ fen: p.fen, orientation: p.orientation, turnColor: p.orientation === "white" ? "black" : "white", lastMove: undefined, check: false });
+  cg.set({ animation: { enabled: true, duration: 250 } });
+  drawPanel(barHTML(p.index, p.size), "Соперник ходит…");
   setTimeout(() => {
     if (S.pos !== p || S.phase !== "wait") return; // left for the start screen meanwhile
     cg.set({ fen: p.after, lastMove: [p.move.slice(0, 2), p.move.slice(2, 4)], turnColor: p.orientation });
     play(p.capture ? "Capture" : "Move");
     setTimeout(() => {
       if (S.pos !== p || S.phase !== "wait") return;
-      S.phase = "draw";
-      S.shownAt = performance.now();
-      lastActive = performance.now();
-      $("#task").textContent = "Что под ударом?";
-      $("#check").disabled = false;
-      renderArrows();
-      log("move_shown", { item: p.item });
+      startDrawing(p.item);
     }, 280);
   }, 450);
 }
@@ -442,7 +463,7 @@ async function leaveSession(how = "button") {
   const sid = S.sid;
   log("leave_click", { how, phase: S.phase, ms: ms(), arrows: arrows.length });
   S.phase = "start";
-  try { await api("/api/leave", { session: sid }); } catch {}
+  try { await api(S.mode === "series" ? "/api/series/leave" : "/api/leave", S.mode === "series" ? { series: sid } : { session: sid }); } catch {}
   showStart();
 }
 panel.addEventListener("click", (e) => { if (e.target.closest("#leave")) leaveSession("button"); });
@@ -459,13 +480,14 @@ async function check() {
   const took = ms();
   setPick(null);
   $("#check").disabled = true;
+  if (S.mode === "series") return seriesAnswer(took);
   let r;
   try { r = await api("/api/answer", { session: S.sid, index: S.index, arrows, ms: took }); }
   catch (e) { S.phase = "draw"; $("#check").disabled = false; $("#task").textContent = `Не получилось проверить: ${e.message}`; return; }
   showReview(r, took);
 }
 
-function showReview(r, took) {
+function showReview(r, took, opt = {}) {
   wrap.classList.add("locked");
   const res = r.result;
   // the board: the user's right arrows green, extra ones grey; missed threats red from the attacker; found targets ringed
@@ -496,12 +518,12 @@ function showReview(r, took) {
   for (const x of res.extras || []) items.push(row("extra", "·", x.text, x.detail));
   const last = S.index + 1 >= S.size;
   panel.innerHTML = `
-    ${barHTML(S.index + 1, S.size)}
+    ${opt.bar ?? barHTML(S.index + 1, S.size)}
     <div class="verdict ${res.ok ? "ok" : "fail"}">${head}</div>
     ${items.length ? `<ul class="items">${items.join("")}</ul>` : ""}
-    <button class="btn primary big" id="next">${last ? "Итог" : "Дальше"}</button>`;
-  $("#next").addEventListener("click", next);
-  $("#next").focus();
+    ${opt.bottom ?? `<button class="btn primary big" id="next">${last ? "Итог" : "Дальше"}</button>`}`;
+  const nb = $("#next");
+  if (nb) { nb.addEventListener("click", opt.onNext || next); nb.focus(); }
 }
 
 async function next() {
@@ -528,6 +550,105 @@ async function showSummary(s) {
     <button class="btn quiet" id="home">На главный</button>`;
   drawCharts();
   $("#again").addEventListener("click", async () => { $("#again").disabled = true; try { showPosition(await api("/api/session", {})); } catch (e) { $("#again").disabled = false; $("#again").textContent = e.message; } });
+  $("#home").addEventListener("click", showStart);
+  $("#again").focus();
+}
+
+// ---------- a series against the bot (vision/series.py) ----------
+function lockBoard() {
+  cg.set({ movable: { color: undefined, dests: new Map() }, draggable: { enabled: false }, selectable: { enabled: false } });
+}
+async function startSeries() {
+  const b = $("#series");
+  if (b) b.disabled = true;
+  let v;
+  try { v = await api("/api/series/start", {}); } catch (e) { if (b) { b.disabled = false; b.textContent = e.message; } return; }
+  Object.assign(S, { mode: "series", sid: v.series, index: 0, size: v.length, pos: null, reviewShapes: null });
+  arrows = [];
+  setPick(null);
+  wrap.classList.remove("locked");
+  cg.setShapes([]);
+  cg.setAutoShapes([]);
+  cg.set({ animation: { enabled: false } });
+  cg.set({ fen: v.bot ? v.bot.before : v.fen, orientation: v.orientation, lastMove: undefined, check: false });
+  cg.set({ animation: { enabled: true, duration: 250 } });
+  seriesShow(v);
+}
+// after the start or the user's move: show the bot's move (if any), then the next step
+function seriesShow(v) {
+  S.sv = v;
+  S.index = v.checks;
+  S.size = v.length;
+  lockBoard();
+  if (!v.bot) return seriesStep(v);
+  S.phase = "wait";
+  arrows = [];
+  drawPanel(barHTML(v.checks, v.length), "Бот ходит…");
+  cg.set({ fen: v.bot.before });
+  setTimeout(() => {
+    if (S.sv !== v) return;
+    cg.set({ fen: v.fen, lastMove: [v.bot.move.slice(0, 2), v.bot.move.slice(2, 4)], turnColor: v.orientation, check: !!v.check });
+    play(v.bot.capture ? "Capture" : "Move");
+    setTimeout(() => { if (S.sv === v) seriesStep(v); }, 280);
+  }, 400);
+}
+function seriesStep(v) {
+  if (v.phase === "check") return startDrawing(null);
+  if (v.phase === "move") {
+    panel.innerHTML = `${barHTML(v.checks, v.length)}<p class="task">${v.check ? "Шах — защищайся. Твой ход." : "Твой ход."}</p>`;
+    return seriesMove(v);
+  }
+  if (v.phase === "over") return seriesSummary(v.summary);
+}
+function seriesMove(v) {
+  S.phase = "move";
+  S.moveAt = performance.now();
+  cg.set({
+    turnColor: v.orientation,
+    movable: { color: v.orientation, free: false, dests: new Map(Object.entries(v.dests || {})), showDests: true, events: { after: onSeriesMove } },
+    draggable: { enabled: true }, selectable: { enabled: true },
+  });
+}
+async function onSeriesMove(orig, dest) {
+  if (S.phase !== "move") return;
+  const took = Math.round(performance.now() - S.moveAt);
+  S.phase = "wait";
+  lockBoard();
+  S.reviewShapes = null;
+  cg.setShapes([]);
+  cg.setAutoShapes([]);
+  let v;
+  try { v = await api("/api/series/move", { series: S.sid, uci: orig + dest, ms: took }); }
+  catch (e) { cg.set({ fen: S.sv.fen }); seriesMove(S.sv); $("#task") && ($("#task").textContent = `Ход не принят: ${e.message}`); return; }
+  seriesShow(v);
+}
+async function seriesAnswer(took) {
+  let v;
+  try { v = await api("/api/series/answer", { series: S.sid, arrows, ms: took }); }
+  catch (e) { S.phase = "draw"; $("#check").disabled = false; $("#task").textContent = `Не получилось проверить: ${e.message}`; return; }
+  S.sv = v;
+  const over = v.phase === "over";
+  showReview({ result: v.result, threats: v.threats }, took, {
+    bar: barHTML(v.checks, v.length),
+    bottom: over ? `<button class="btn primary big" id="next">Итог серии</button>` : `<p class="task">Твой ход — сделай его на доске.</p>`,
+    onNext: () => seriesSummary(v.summary),
+  });
+  if (!over) seriesMove(v);
+}
+async function seriesSummary(s) {
+  S.phase = "summary";
+  lockBoard();
+  await loadProgress();
+  const verdict = s.clean ? `✓ Без промахов — дальше ${s.next} ${plural(s.next, "ход", "хода", "ходов")}` : `✗ Промахов: ${s.misses} — снова ${s.next} ${plural(s.next, "ход", "хода", "ходов")}`;
+  panel.innerHTML = `
+    ${heroHTML("за серию")}
+    <div class="verdict ${s.clean ? "ok" : "fail"}">${verdict}</div>
+    <p class="muted">Проверок ${s.checks} из ${s.length}${s.game_over ? ` · партия окончена ${s.result}` : ""} · рекорд ${s.best}</p>
+    <div class="chart" id="ch-rating"></div>
+    <button class="btn primary big" id="again">Ещё серия</button>
+    <button class="btn quiet" id="home">На главный</button>`;
+  drawCharts();
+  $("#again").addEventListener("click", startSeries);
   $("#home").addEventListener("click", showStart);
   $("#again").focus();
 }
