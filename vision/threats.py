@@ -333,13 +333,14 @@ def explain_extra(extra: dict, answer: dict, after: chess.Board) -> dict:
 
 
 def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bool = True,
-          played: dict | None = None, with_tactics: bool = True) -> dict:
+          played: dict | None = None, with_tactics: bool = True, with_threats: bool = True) -> dict:
     """Compare the user's arrows ({"from": "d8", "to": "d4"}) with the answer key: his threats and, with
     `with_chances` (answers given before 2026-11-24 were not asked for them), the user's own chances.
 
     {"found": ["d4"], "missed": ["f7"], "extra": [{"from", "to", "why": "defended" | "not_attacked" | "wrong_attacker"}],
      "ok": bool, "n": threats + chances asked, "chances": with_chances, "tactics": with_tactics (answers given before
-     the engine's tactics were asked for are checked without them),
+     the engine's tactics were asked for are checked without them), "threats_asked": with_threats (since 2026-11-24
+     the user marks only his chances here: his threats are checked after the user's own move, vision/play.commit),
      "items": [{"target", "found", "text", "detail"}], "extras": [{"text", "detail"}]}
     `played`: the user's own move ({"from", "to"}), drawn instead of finishing the marking: a chance it takes is
     found (he plays it), and it is never an extra arrow.
@@ -347,7 +348,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
     (on his king: a mate); a circle where nothing can be won is extra ("why": "not_winnable")."""
     circles = [a.get("from") for a in arrows if a.get("from") and a.get("from") == a.get("to")]
     arrows = [a for a in arrows if not (a.get("from") and a.get("from") == a.get("to"))]
-    keys = [*answer["threats"], *((answer.get("chances") or []) if with_chances else [])]
+    keys = [*(answer["threats"] if with_threats else []), *((answer.get("chances") or []) if with_chances else [])]
     if not with_tactics:
         keys = [t for t in keys if not t.get("tactic")]
     chances = [t for t in (answer.get("chances") or []) if with_tactics or not t.get("tactic")]
@@ -394,7 +395,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
     items = [{"target": t["target"], "found": t["target"] in found, "text": describe(t, after),
               "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in keys]
     return {"found": sorted(found), "missed": missed, "extra": extra, "ok": not missed and not extra,
-            "n": len(keys), "chances": with_chances, "tactics": with_tactics,
+            "n": len(keys), "chances": with_chances, "tactics": with_tactics, "threats_asked": with_threats,
             "items": items, "extras": [explain_extra(x, answer, after) for x in extra]}
 
 

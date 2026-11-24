@@ -37,6 +37,8 @@ Score of one answer: a quiet position — 1 without arrows, minus 0.5 per extra 
 share of threats found, minus 0.25 per extra arrow; never below 0.
 """
 
+import json
+
 import chess
 
 from . import store, threats
@@ -203,6 +205,8 @@ def replay() -> list[dict]:
     for r in rows:
         f = _item_features(r["item"], r["fen"], r["move"], r["answer"], r["source"])
         if r["source"] != "ownmove":
+            if r["result"] and json.loads(r["result"]).get("threats_asked") is False:
+                f = {}  # only his pieces to win were asked: the chances make it hard, not his threats
             f = with_chances(f, r["answer"], r["result"])
         diff = BASE + sum(w.get(k, 0) * v for k, v in f.items())
         e = expected(diff, rating)

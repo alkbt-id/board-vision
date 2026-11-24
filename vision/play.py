@@ -212,7 +212,9 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
         mv = chess.Move.from_uci(move[:4])
         if any(m.from_square == mv.from_square and m.to_square == mv.to_square for m in board.legal_moves):
             played = {"from": move[:2], "to": move[2:4]}
-    result = threats.check(key, arrows, board, played=played)
+    # only his pieces you can win: his threats are marked after your own move (the user, 2026-11-24: «я отмечаю
+    # угрозы только те которые возникнут после моего хода»)
+    result = threats.check(key, arrows, board, played=played, with_threats=False)
     chances = key.get("chances") or []
     item_id = p["item"]
     if item_id is None:  # a position reached in play: store it like a pool position
@@ -236,8 +238,8 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
                extra=result["extra"],
                arrows=arrows, ms=ms, series=p["series_no"], step=sr["checks"],
                **({"move": played["from"] + played["to"]} if played else {}))
-    extra: dict = {"result": result, "threats": key["threats"], "chances": chances}
-    if sr["checks"] >= sr["length"] or board.is_game_over():
+    extra: dict = {"result": result, "threats": [], "chances": chances}
+    if board.is_game_over():  # the series ends after your move now (vision/play.commit)
         extra["series_end"] = _end_series(p, game_over=board.is_game_over())
         p["phase"] = "next"
     else:
@@ -287,9 +289,9 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
                missed=result["missed"], extra=result["extra"], arrows=arrows, ms=ms, series=p["series_no"])
     extra: dict = {"own": {"result": result, "threats": key["threats"], "attacks": key["attacks"], "move": mv.uci(),
                            "san": san, "before": before_fen}}
-    if board.is_game_over():
+    if board.is_game_over() or sr["checks"] >= sr["length"]:  # the last turn of the series: no bot move after it
         p["phase"] = "next"
-        extra["series_end"] = _end_series(p, game_over=True)
+        extra["series_end"] = _end_series(p, game_over=board.is_game_over())
         extra["last"] = p["checks"] >= CHECKS
     else:
         p["phase"] = "bot"

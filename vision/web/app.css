@@ -186,7 +186,8 @@ details.rules p { margin: 8px 0 0; }
 .board-col { gap: 0; }
 .board-mode { height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 6px 0 14px;
   border-radius: 8px 8px 0 0; font: 700 20px/1.1 var(--font-display); color: var(--ink); background: var(--surface-3); visibility: hidden; }
-.board-mode.threats, .board-mode.move, .board-mode.wait, .board-mode.ok, .board-mode.fail, .board-mode.end { visibility: visible; }
+.board-mode.threats, .board-mode.move, .board-mode.wait, .board-mode.ok, .board-mode.fail, .board-mode.end, .board-mode.chances { visibility: visible; }
+.board-mode.chances { background: #7b4fd6; color: #fff; }
 .board-mode.threats { background: #e07b00; color: #1b1200; }
 .board-mode.move { background: #2a78d6; color: #fff; }
 .board-mode.wait { color: var(--muted); }
@@ -194,13 +195,16 @@ details.rules p { margin: 8px 0 0; }
 .board-mode.fail { background: #b23b2a; color: #fff; }
 .bm-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bm-text .lvl { display: inline-block; margin-left: 8px; padding: 3px 8px; border-radius: 6px; background: rgba(0, 0, 0, .22); font-size: 16px; vertical-align: 2px; }
-.bm-btn { flex: none; height: 44px; min-width: 104px; padding: 0 18px; border: 0; border-radius: 6px; cursor: pointer;
-  font: 700 17px/1 var(--font-display); background: #1b1200; color: #fff; }
-.bm-btn:hover:not(:disabled) { background: #000; }
-.board-mode.move .bm-btn { background: #fff; color: #1a56a8; }
-.board-mode.ok .bm-btn { background: #fff; color: #1f5e38; }
-.board-mode.fail .bm-btn { background: #fff; color: #8f2a1d; }
-.board-mode.end .bm-btn, .board-mode.wait .bm-btn { background: var(--accent-bg); color: var(--accent-ink); }
+/* the button: white with the word and › in the strip's colour, as on the review (the user, 2026-11-24: «вот такую кнопку хочу») */
+.bm-btn { flex: none; height: 44px; min-width: 104px; padding: 0 12px 0 18px; border: 0; border-radius: 6px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font: 700 17px/1 var(--font-display); background: #fff; color: #1a56a8; }
+.bm-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.bm-btn:hover:not(:disabled) { background: #eef1f5; }
+.board-mode.threats .bm-btn { color: #8a4a00; }
+.board-mode.chances .bm-btn { color: #4b2a99; }
+.board-mode.ok .bm-btn { color: #1f5e38; }
+.board-mode.fail .bm-btn { color: #8f2a1d; }
 .board-mode .bm-btn:disabled { opacity: .45; cursor: default; }
 .bm-undo { flex: none; width: 44px; height: 44px; border: 0; border-radius: 6px; display: grid; place-items: center; cursor: pointer;
   background: rgba(0, 0, 0, .14); color: inherit; }
@@ -224,7 +228,8 @@ details.rules p { margin: 8px 0 0; }
 
 /* the frame is drawn inside the board (over the squares, under nothing you click), so it lines up with the strip */
 .board-wrap { position: relative; border-radius: 0 0 3px 3px; }
-.board-wrap.mode-threats::after, .board-wrap.mode-move::after { content: ""; position: absolute; inset: 0; border: 5px solid;
+.board-wrap.mode-threats::after, .board-wrap.mode-move::after, .board-wrap.mode-chances::after { content: ""; position: absolute; inset: 0; border: 5px solid;
   border-top: 0; border-radius: 0 0 3px 3px; pointer-events: none; z-index: 10; }
 .board-wrap.mode-threats::after { border-color: #e07b00; }
 .board-wrap.mode-move::after { border-color: #2a78d6; }
+.board-wrap.mode-chances::after { border-color: #7b4fd6; }

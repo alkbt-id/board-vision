@@ -78,7 +78,7 @@ def run() -> None:
         answer, after = keys[a["item"]]
         stored = json.loads(a["result"] or "{}")
         res = threats.check(answer, json.loads(a["arrows"] or "[]"), after, with_chances=bool(stored.get("chances")),
-                            with_tactics=bool(stored.get("tactics")))
+                            with_tactics=bool(stored.get("tactics")), with_threats=stored.get("threats_asked", True))
         store.run("UPDATE attempts SET n_threats=?, found=?, missed=?, extra=?, ok=?, result=? WHERE id=?",
                   (res["n"], len(res["found"]), len(res["missed"]), len(res["extra"]), int(res["ok"]),
                    json.dumps(res, ensure_ascii=False), a["id"]))
