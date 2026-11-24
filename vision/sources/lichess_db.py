@@ -3,7 +3,9 @@ https://database.lichess.org), both players inside the rating band of config.tom
 
 Only the beginning of a monthly file is read (a stream, the connection is closed when enough games are taken).
 Each game gives a few random positions after the moves of one side: up to 2 with a threat and up to 3 quiet ones,
-so the pool keeps the real mix of a game — mostly quiet positions.
+so the pool keeps the real mix of a game — mostly quiet positions. Only from move 9 on (FIRST_PLY): the openings of
+other people's games at this level are often nonsense (the user, 2026-11-24, after 1.a3 2.b3 3.g3 4.h3: «а можно мне
+бредовые позиции не ставить?»); his own games keep their openings.
 """
 
 import datetime
@@ -20,6 +22,7 @@ from . import net, say, sample_game
 URL = "https://database.lichess.org/standard/lichess_db_standard_rated_{month}.pgn.zst"
 TAG = re.compile(r'^\[(\w+) "(.*)"\]$')
 GAMES_PER_RUN = 1200
+FIRST_PLY = 16  # the opponent's moves from move 9 on
 POOL_TARGET = 5000  # stop adding once the pool has this many positions from other people's games
 
 
@@ -88,7 +91,7 @@ def run() -> None:
                     continue
                 user = rng.choice([chess.WHITE, chess.BLACK])
                 ref = head.get("Site", "")
-                sample_game(chess.Board(), moves, user, "db", ref, first_ply=4, max_threat=2, max_quiet=3, rng=rng)
+                sample_game(chess.Board(), moves, user, "db", ref, first_ply=FIRST_PLY, max_threat=2, max_quiet=3, rng=rng)
                 taken += 1
                 if taken % 100 == 0:
                     say(f"чужие партии {month}: взято {taken} из {seen} прочитанных")

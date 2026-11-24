@@ -25,7 +25,7 @@ GAIN = 2  # what the opponent must win by the taking, in pawns
 NOT_LOST = -300  # the player's side with best play (centipawns), as for a series start (vision/play.py)
 
 
-def moments(moves: list[chess.Move]) -> list[tuple[chess.Board, chess.Move, int, str]]:
+def moments(moves: list[chess.Move], first_ply: int | None = None) -> list[tuple[chess.Board, chess.Move, int, str]]:
     """(position before the opponent's move, his move, ply, what was missed) for each missed threat of a game."""
     out = []
     board = chess.Board()
@@ -55,6 +55,8 @@ def moments(moves: list[chess.Move]) -> list[tuple[chess.Board, chess.Move, int,
             continue  # the player's own move created it: a different kind of blunder
         if won and seen.piece_at(m3.to_square) != after_m2.piece_at(m3.to_square):
             continue  # the piece taken is not the one that was threatened (it moved there)
+        if ply < (lichess_db.FIRST_PLY if first_ply is None else first_ply):
+            continue  # the opening of another's game: often nonsense at this level (see lichess_db)
         out.append((before, m1, ply, "mate" if mate else "missed"))
     return out
 

@@ -233,7 +233,8 @@ def test_a_missed_threat_in_a_game_is_found():
     from vision.sources import missed
     board = chess.Board()
     moves = [board.push_san(m) for m in ["e4", "e5", "Qh5", "Nc6", "Bc4", "Nf6", "Qxf7#"]]
-    found = missed.moments(moves)
+    assert missed.moments(moves) == []  # the opening of another's game is left out (from move 9 on)
+    found = missed.moments(moves, first_ply=0)
     assert [(ply, what) for _, _, ply, what in found] == [(4, "mate")]
     before, move, _, _ = found[0]
     assert before.san(move) == "Bc4"

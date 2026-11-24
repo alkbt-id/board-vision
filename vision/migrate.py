@@ -120,3 +120,17 @@ def sources_v2() -> None:
             lost += 1
     store.meta_set("sources_v2", "1")
     events.log("sources_v2", puzzles="set aside, read again from the solver's side", missed_lost=lost)
+
+
+def sources_v3() -> None:
+    """Once (2026-11-24, the user: «а можно мне бредовые позиции не ставить?»): positions from the first 8 moves of
+    other people's games (the open database and the real misses) are set aside as «db_early» / «missed_early» — not
+    deleted, past answers keep them; new ones are taken from move 9 on (vision/sources/lichess_db.FIRST_PLY)."""
+    if store.meta_get("sources_v3") == "1":
+        return
+    from .sources import lichess_db
+    n = len(store.q("SELECT id FROM items WHERE source IN ('db', 'missed') AND ply < ?", (lichess_db.FIRST_PLY,)))
+    store.run("UPDATE items SET source = source || '_early' WHERE source IN ('db', 'missed') AND ply < ?",
+              (lichess_db.FIRST_PLY,))
+    store.meta_set("sources_v3", "1")
+    events.log("sources_v3", early_set_aside=n)

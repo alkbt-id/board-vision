@@ -55,7 +55,7 @@ def _pick_start(p: dict) -> dict:
     threat or a quiet one by the current share."""
     if random.random() < REPEAT_SHARE:
         due = store.q("SELECT s.item FROM schedule s JOIN items i ON i.id = s.item WHERE s.due <= ?"
-                      " AND i.source NOT IN ('ownmove', 'puzzle_old', 'missed_lost')"
+                      " AND i.source NOT IN ('ownmove', 'puzzle_old', 'missed_lost', 'db_early', 'missed_early')"
                       " ORDER BY s.due LIMIT 20", (store.now_ms(),))
         for r in due:
             if r["item"] not in p["used"]:

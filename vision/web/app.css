@@ -57,7 +57,9 @@ button { font: inherit; color: inherit; }
 .app { width: 100vw; height: 100vh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
 
 /* ---------- header (iPad: below the frosted status band, as in «Шахматный тренер») ---------- */
-.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(8px + env(safe-area-inset-top, 0px) + min(32px, env(safe-area-inset-top, 0px) * 100)) 16px 8px; border-bottom: 1px solid var(--line); background: var(--surface); min-height: 49px; }
+/* just clear of the iPad's status bar: the extra room «Шахматный тренер» needs is not needed here (the user, 2026-11-24:
+   «на айпаде сделай шапку меньше») */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(4px + env(safe-area-inset-top, 0px)) 16px 4px; border-bottom: 1px solid var(--line); background: var(--surface); min-height: 40px; }
 .title { font: 600 15px/1.2 var(--font-display); }
 .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
 .status.bad { color: var(--bad); }
