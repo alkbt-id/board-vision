@@ -36,7 +36,7 @@ def test_knight_move_opens_the_d_file_on_the_bishop():
 
 def test_quiet_opening_position_has_no_threats():
     answer = threats.analyse(chess.Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"))
-    assert answer == {"threats": [], "defended": []}
+    assert answer == {"threats": [], "defended": [], "exchanges": {}}
 
 
 def test_battery_wins_a_knight_a_single_rook_does_not():
@@ -95,3 +95,18 @@ def test_check_counts_arrows_both_ways_and_explains_extras():
     assert miss["missed"] == ["d4"]
     assert miss["extra"][0]["why"] == "not_attacked"
     assert "слон d4 — бьёт ферзь d8" in miss["lines"][0]
+
+
+def test_review_spells_out_the_exchange():
+    # the knight on e5 is defended by the rook, but the second white rook behind the first decides it
+    after = chess.Board("4r1k1/8/8/4n3/8/8/4R3/4R1K1 b - - 0 1")
+    answer = threats.analyse(after)
+    assert answer is not None
+    text = threats.describe(answer["threats"][0], after)
+    assert "если взять обратно: Rxe5 Rxe5 Rxe5 — соперник всё равно +3" in text
+    # one rook only: the knight is safe, and an arrow on it is explained by the exchange
+    after = chess.Board("4r1k1/8/8/4n3/8/8/4R3/6K1 b - - 0 1")
+    answer = threats.analyse(after)
+    assert answer is not None
+    got = threats.check(answer, [{"from": "e2", "to": "e5"}], after)
+    assert got["extra_lines"] == ["лишняя стрелка e2→e5: фигура защищена — размен Rxe5 Rxe5, и соперник −2"]

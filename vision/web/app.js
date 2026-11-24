@@ -236,10 +236,10 @@ async function showStart() {
     <h2>Что теперь под ударом?</h2>
     <ol class="rules">
       <li>Соперник делает ход.</li>
-      <li>Нарисуй стрелку на каждую свою фигуру или пешку, которую он может выгодно взять — от его фигуры к твоей. И на мат в один ход, если он есть.</li>
+      <li>Нарисуй стрелку на каждую свою фигуру или пешку, которую он может взять и остаться в плюсе после всех разменов на этом поле, — от его фигуры к твоей. И на мат в один ход, если он есть.</li>
       <li>Ищи по всей доске, не только у фигуры, которая пошла. Если угроз нет — так и ответь.</li>
     </ol>
-    <p class="hint">«Выгодно взять» — нападающих больше, чем защитников, или нападает фигура дешевле.</p>
+    <p class="hint">Считай размен до конца: кто берёт первым, кто отвечает и какие фигуры стоят друг за другом на одной линии (ладья за ладьёй, ферзь за слоном). Прикидка «нападающих больше, чем защитников, или нападает фигура дешевле» обычно верна, но не всегда. В разборе размен расписан ходами; +1 — пешка, +3 — конь или слон, +5 — ладья, +9 — ферзь.</p>
     <div id="pool" class="hint"></div>
     <button class="btn primary big" id="go" disabled>Начать — 15 позиций</button>
     <div id="days"></div>`;
@@ -373,9 +373,8 @@ function showReview(r, took) {
     cls = res.ok ? "ok" : "fail";
     head = res.ok ? (n === 1 ? "Верно: угроза найдена" : `Верно: найдены все ${n}`) : `Найдено ${res.found.length} из ${n}`;
   }
-  const why = { defended: "фигура защищена — взять её без потерь нельзя", not_attacked: "эту фигуру никто не бьёт", wrong_attacker: "бьёт её другая фигура" };
   const lines = res.lines.map((l) => `<li class="${l.startsWith("найдено") ? "found" : "missed"}">${esc(l)}</li>`);
-  for (const x of res.extra) lines.push(`<li class="extra">лишняя стрелка <span class="sq">${esc(x.from)}→${esc(x.to)}</span>: ${esc(why[x.why] || x.why)}</li>`);
+  for (const l of res.extra_lines || []) lines.push(`<li class="extra">${esc(l)}</li>`);
   const where = [r.source, r.motif].filter(Boolean).join(" · ") + (r.repeat ? " · повтор" : "");
   const link = r.ref && r.ref.startsWith("http") ? ` · <a href="${esc(r.ref)}" target="_blank" rel="noopener">открыть</a>` : "";
   const last = S.index + 1 >= S.size;
