@@ -94,7 +94,8 @@ def test_check_counts_arrows_both_ways_and_explains_extras():
     miss = threats.check(answer, [{"from": "a7", "to": "a3"}], after)
     assert miss["missed"] == ["d4"]
     assert miss["extra"][0]["why"] == "not_attacked"
-    assert "слон d4 — бьёт ферзь d8" in miss["lines"][0]
+    assert miss["items"][0]["text"] == "слон d4 ← ферзь d8"
+    assert miss["extras"][0]["text"] == "a7→a3: её никто не бьёт"
 
 
 def test_review_spells_out_the_exchange():
@@ -102,11 +103,24 @@ def test_review_spells_out_the_exchange():
     after = chess.Board("4r1k1/8/8/4n3/8/8/4R3/4R1K1 b - - 0 1")
     answer = threats.analyse(after)
     assert answer is not None
-    text = threats.describe(answer["threats"][0], after)
-    assert "если взять обратно: Rxe5 Rxe5 Rxe5 — соперник всё равно +3" in text
+    got = threats.check(answer, [], after)
+    assert got["items"][0]["text"] == "конь e5 ← ладья e2"
+    assert got["items"][0]["detail"] == "взять обратно: Rxe5 Rxe5 Rxe5 → соперник всё равно +3"
     # one rook only: the knight is safe, and an arrow on it is explained by the exchange
     after = chess.Board("4r1k1/8/8/4n3/8/8/4R3/6K1 b - - 0 1")
     answer = threats.analyse(after)
     assert answer is not None
     got = threats.check(answer, [{"from": "e2", "to": "e5"}], after)
-    assert got["extra_lines"] == ["лишняя стрелка e2→e5: фигура защищена — размен Rxe5 Rxe5, и соперник −2"]
+    assert got["extras"] == [{"text": "e2→e5: защищена", "detail": "размен Rxe5 Rxe5 → соперник −2"}]
+
+
+def test_rating_features_see_a_discovered_attack_and_a_quiet_decoy():
+    from vision import rating
+    # 20…Nc7 opened the d-file: the queen d8 did not move, its line to d4 was opened
+    before = "r2qr1k1/pp4p1/2p2p1p/3n4/2PB4/PP1P2Q1/5PPP/R4RK1 b - - 0 20"
+    b = chess.Board(before)
+    b.push_uci("d5c7")
+    f = rating.features(before, "d5c7", threats.analyse(b))
+    assert f["threat"] == 1 and f["discovered"] == 1
+    assert rating.score(2, 1, 0) == 0.5
+    assert rating.score(0, 0, 1) == 0.5

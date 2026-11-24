@@ -10,6 +10,7 @@
   POST /api/log       an event from the window (vision/events.py lists the kinds)
   POST /api/refresh   download new positions now
   GET  /api/history   results per day
+  GET  /api/progress  the progress chart: one point per session
 """
 
 import contextlib
@@ -90,6 +91,10 @@ async def get_history(_: Request):
     return JSONResponse(session.history(30))
 
 
+async def get_progress(_: Request):
+    return JSONResponse(session.progress())
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_app):
     config.ensure()
@@ -119,6 +124,7 @@ app = Starlette(
         Route("/api/log", guarded(post_log), methods=["POST"]),
         Route("/api/refresh", guarded(post_refresh), methods=["POST"]),
         Route("/api/history", get_history),
+        Route("/api/progress", get_progress),
         Mount("/static", StaticFiles(directory=WEB)),
     ],
     lifespan=lifespan,

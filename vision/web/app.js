@@ -186,13 +186,12 @@ wrap.addEventListener("contextmenu", (e) => e.preventDefault());
 function layout() {
   const side = window.innerWidth <= 820 ? 0 : parseInt(getComputedStyle(document.documentElement).getPropertyValue("--side-w")) + 14;
   const top = $(".top").getBoundingClientRect().height;
-  const hint = $("#board-hint").getBoundingClientRect().height + 6;
-  const availH = window.innerHeight - top - 28 - hint;
+  const availH = window.innerHeight - top - 28;
   const availW = window.innerWidth - side - 28;
   const size = Math.max(240, Math.floor(Math.min(availH, availW) / 8) * 8);
   wrap.style.width = wrap.style.height = `${size}px`;
-  $("#board-hint").style.maxWidth = `${size}px`;
   cg.redrawAll();
+  if (S.phase === "start" || S.phase === "summary") drawCharts();
 }
 window.addEventListener("resize", layout);
 
@@ -224,6 +223,104 @@ const plural = (n, one, few, many) => {
 };
 
 let stateTimer = null;
+let progress = null; // GET /api/progress: {start, rating, points: [{session, ts, rating, n, median_s}]}
+
+// ---------- charts: hand-drawn SVG, one series each (no legend: the title names it), hover shows the values ----------
+const fmtDate = (ts) => new Date(ts).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+function niceRange(vals, minSpan, step, floor = -Infinity) {
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi - lo < minSpan) { const m = (hi + lo) / 2; lo = m - minSpan / 2; hi = m + minSpan / 2; }
+  if (lo < floor) { hi += floor - lo; lo = floor; }
+  return [Math.floor(lo / step) * step, Math.ceil(hi / step) * step];
+}
+function lineChart(el, pts, o) {
+  el.textContent = "";
+  const vals = pts.map((p) => p[o.key]);
+  const W = Math.max(200, el.clientWidth || el.parentElement.clientWidth - 36), H = o.height, L = 40, R = 14, T = 12, B = 8;
+  const [lo, hi] = niceRange(vals, o.minSpan, o.step, o.floor);
+  const x = (i) => (pts.length === 1 ? (L + W - R) / 2 : L + (i * (W - L - R)) / (pts.length - 1));
+  const y = (v) => T + ((hi - v) / (hi - lo || 1)) * (H - T - B);
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("width", W);
+  svg.setAttribute("height", H);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${o.title}: последнее ${o.fmt(vals[vals.length - 1])}`);
+  const add = (tag, attrs, parent = svg) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); parent.appendChild(n); return n; };
+  for (const v of [lo, (lo + hi) / 2, hi]) {
+    add("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), class: "grid" });
+    add("text", { x: L - 6, y: y(v) + 4, class: "tick", "text-anchor": "end" }).textContent = o.fmt(v);
+  }
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[o.key]).toFixed(1)}`).join(" ");
+  if (pts.length > 1) {
+    add("path", { d: `${d} L${x(pts.length - 1)},${H - B} L${x(0)},${H - B} Z`, class: "area" });
+    add("path", { d, class: "line" });
+  }
+  pts.forEach((p, i) => add("circle", { cx: x(i), cy: y(p[o.key]), r: i === pts.length - 1 ? 5 : 4, class: i === pts.length - 1 ? "dot last" : "dot" }));
+  const cross = add("line", { x1: 0, x2: 0, y1: T, y2: H - B, class: "cross", visibility: "hidden" });
+  const head = document.createElement("div");
+  head.className = "chart-head";
+  const title = document.createElement("span");
+  title.textContent = o.title;
+  const now = document.createElement("b");
+  now.textContent = o.fmt(vals[vals.length - 1]);
+  head.append(title, now);
+  const tip = document.createElement("div");
+  tip.className = "tip";
+  tip.hidden = true;
+  el.append(head, svg, tip);
+  svg.addEventListener("pointermove", (e) => {
+    const r = svg.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * W;
+    let best = 0;
+    pts.forEach((_, i) => { if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i; });
+    const p = pts[best];
+    cross.setAttribute("x1", x(best)); cross.setAttribute("x2", x(best)); cross.setAttribute("visibility", "visible");
+    tip.hidden = false;
+    tip.textContent = "";
+    const v = document.createElement("b"); v.textContent = o.fmt(p[o.key]);
+    const sub = document.createElement("span"); sub.textContent = `${fmtDate(p.ts)} · ${p.n} поз.`;
+    tip.append(v, sub);
+    const left = Math.min(Math.max(0, (x(best) / W) * r.width - 50), r.width - 110);
+    tip.style.left = `${left}px`;
+  });
+  svg.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
+}
+function drawCharts() {
+  const pts = progress?.points || [];
+  const c1 = $("#ch-rating"), c2 = $("#ch-time");
+  if (!c1) return;
+  if (pts.length < 2) {
+    c1.innerHTML = `<p class="muted">График появится после двух сессий.</p>`;
+    if (c2) c2.textContent = "";
+    return;
+  }
+  lineChart(c1, pts, { key: "rating", height: 150, title: "По сессиям", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
+  const tp = pts.filter((p) => p.median_s != null);
+  if (c2 && tp.length > 1) lineChart(c2, tp, { key: "median_s", height: 80, title: "Секунд на позицию", fmt: (v) => String(Math.round(v)), minSpan: 6, step: 2, floor: 0 });
+}
+function heroHTML(sub) {
+  const pts = progress?.points || [];
+  const now = progress?.rating ?? 1500;
+  const prev = pts.length > 1 ? pts[pts.length - 2].rating : progress?.start ?? 1500;
+  const delta = pts.length ? now - prev : 0;
+  const cls = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+  const mark = delta > 0 ? "▲" : delta < 0 ? "▼" : "•";
+  const deltaText = pts.length ? `${mark} ${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${Math.abs(delta)} ${sub}` : "стартовый рейтинг";
+  return `<div class="hero"><div class="hero-num">${now}</div><div class="hero-sub">рейтинг внимательности</div><div class="delta ${cls}">${deltaText}</div></div>`;
+}
+async function loadProgress() {
+  try { progress = await api("/api/progress"); } catch { progress = null; }
+}
+
+const RULES = `
+  <details class="rules"><summary>Как это работает</summary>
+    <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле. И на поле мата в один ход. Нет угроз — «Угроз нет».</p>
+    <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — «Отменить», Backspace или та же стрелка ещё раз.</p>
+    <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
+  </details>`;
+
 async function showStart() {
   S.phase = "start";
   S.sid = null;
@@ -235,59 +332,36 @@ async function showStart() {
   cg.set({ fen: "start", orientation: "white", lastMove: undefined });
   cg.setShapes([]);
   cg.setAutoShapes([]);
+  await loadProgress();
   panel.innerHTML = `
-    <h2>Что теперь под ударом?</h2>
-    <ol class="rules">
-      <li>Соперник делает ход.</li>
-      <li>Нарисуй стрелку на каждую свою фигуру или пешку, которую он может взять и остаться в плюсе после всех разменов на этом поле, — от его фигуры к твоей. И на мат в один ход, если он есть.</li>
-      <li>Ищи по всей доске, не только у фигуры, которая пошла. Если угроз нет — так и ответь.</li>
-    </ol>
-    <p class="hint">Считай размен до конца: кто берёт первым, кто отвечает и какие фигуры стоят друг за другом на одной линии (ладья за ладьёй, ферзь за слоном). Прикидка «нападающих больше, чем защитников, или нападает фигура дешевле» обычно верна, но не всегда. В разборе размен расписан ходами; +1 — пешка, +3 — конь или слон, +5 — ладья, +9 — ферзь.</p>
-    <div id="pool" class="hint"></div>
-    <button class="btn primary big" id="go" disabled>Начать — 15 позиций</button>
-    <div id="days"></div>`;
+    ${heroHTML("за последнюю сессию")}
+    <div class="chart" id="ch-rating"></div>
+    <div class="chart" id="ch-time"></div>
+    <button class="btn primary big" id="go" disabled>Начать</button>
+    ${RULES}`;
   $("#go").addEventListener("click", startSession);
+  drawCharts();
   await refreshState();
-  loadDays();
 }
 
 async function refreshState() {
   clearTimeout(stateTimer);
   let st;
-  try { st = await api("/api/state"); } catch (e) { statusEl.textContent = `сервер не отвечает: ${e.message}`; statusEl.className = "status bad"; return; }
-  const c = st.counts, imp = st.import;
+  try { st = await api("/api/state"); } catch (e) { statusEl.textContent = "сервер не отвечает"; statusEl.className = "status bad"; return; }
+  const imp = st.import;
   statusEl.className = "status";
-  statusEl.innerHTML = imp.running
-    ? `<span class="spin"></span>готовлю позиции: ${esc(imp.step)}${imp.text ? " · " + esc(imp.text) : ""}`
-    : `позиций ${c.threat + c.quiet}`;
-  if (S.phase === "start") {
-    const pool = $("#pool");
-    if (pool) {
-      pool.textContent = st.ready
-        ? `Позиций: с угрозой ${c.threat}, тихих ${c.quiet}${c.quiet_unchecked ? ` (ещё ${c.quiet_unchecked} проверяет Stockfish)` : ""}. Из твоих партий ${c.own}, из чужих ${c.db}, из задач ${c.puzzle}.`
-        : `Готовлю позиции из твоих партий, чужих партий и задач Lichess… ${imp.text ? `(${imp.text})` : ""}`;
-      $("#go").disabled = !st.ready;
-    }
+  statusEl.innerHTML = imp.running ? `<span class="spin"></span>готовлю позиции` : "";
+  const go = $("#go");
+  if (S.phase === "start" && go) {
+    go.disabled = !st.ready;
+    go.textContent = st.ready ? "Начать" : "Готовлю позиции…";
   }
-  if (imp.running) stateTimer = setTimeout(refreshState, 2000);
-}
-
-async function loadDays() {
-  const el = $("#days");
-  if (!el) return;
-  let days;
-  try { days = await api("/api/history"); } catch { return; }
-  if (!days.length) return;
-  el.innerHTML = `<h3>По дням</h3><div class="days">${days.slice(0, 10).map((d) => `
-    <div><span>${esc(d.day.slice(5).split("-").reverse().join("."))}</span>
-    <span>угроз найдено <b>${d.found}</b> из <b>${d.threats}</b> · тихих верно <b>${d.quiet_ok}</b> из <b>${d.quiet}</b></span>
-    <span>${sec(d.median_ms)}</span></div>`).join("")}</div>
-    <p class="hint">Справа — среднее время на позицию.</p>`;
+  if (imp.running) stateTimer = setTimeout(refreshState, 3000);
 }
 
 async function startSession() {
   $("#go").disabled = true;
-  try { showPosition(await api("/api/session", {})); } catch (e) { $("#pool").textContent = e.message; $("#go").disabled = false; }
+  try { showPosition(await api("/api/session", {})); } catch (e) { $("#go").textContent = e.message; $("#go").disabled = false; }
 }
 
 function showPosition(p) {
@@ -302,17 +376,12 @@ function showPosition(p) {
   cg.set({ fen: p.fen, orientation: p.orientation, turnColor: p.orientation === "white" ? "black" : "white", lastMove: undefined, check: false });
   cg.set({ animation: { enabled: true, duration: 250 } });
   panel.innerHTML = `
-    <div class="step"><span>Позиция ${p.index + 1} из ${p.size}</span>${exitButton()}</div>
-    <div class="prog"><i style="width:${(p.index / p.size) * 100}%"></i></div>
-    <p class="task" id="task">Смотри: соперник ходит…</p>
+    ${barHTML(p.index, p.size)}
+    <p class="task" id="task">Соперник ходит…</p>
     <div class="arrow-list" id="arrow-list" hidden></div>
-    <div class="actions">
-      <button class="btn" id="undo" disabled title="Убрать последнюю стрелку (Backspace или ⌘Z)">Отменить</button>
-      <button class="btn quiet" id="clear" disabled>Стереть все</button>
-    </div>
+    <button class="btn" id="undo" disabled title="Убрать последнюю стрелку (Backspace или ⌘Z)">Отменить</button>
     <button class="btn primary big" id="check" disabled>Угроз нет</button>`;
   $("#undo").addEventListener("click", undoArrow);
-  $("#clear").addEventListener("click", clearArrows);
   $("#arrow-list").addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
     if (chip) removeArrow(+chip.dataset.i, "list");
@@ -327,7 +396,7 @@ function showPosition(p) {
       S.phase = "draw";
       S.shownAt = performance.now();
       lastActive = performance.now();
-      $("#task").innerHTML = "Соперник сходил. Нарисуй стрелки на все свои фигуры, которые теперь под ударом.";
+      $("#task").textContent = "Что под ударом?";
       $("#check").disabled = false;
       renderArrows();
       log("move_shown", { item: p.item });
@@ -335,8 +404,10 @@ function showPosition(p) {
   }, 450);
 }
 
-// «На главный» in the progress row: ends the session with what was answered and shows the start screen
-const exitButton = () => `<button class="link-btn" id="leave" title="Закончить сессию сейчас и вернуться на главный экран (Esc дважды)">На главный</button>`;
+// the progress row: bar, «3/15», and ✕ — back to the start screen (the session ends with what was answered)
+const barHTML = (done, size) => `
+  <div class="bar"><div class="prog"><i style="width:${(done / size) * 100}%"></i></div><span class="count">${Math.min(done + 1, size)}/${size}</span>
+  <button class="ibtn" id="leave" aria-label="На главный экран" title="На главный экран (Esc дважды)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
 async function leaveSession(how = "button") {
   if (!S.sid || S.phase === "start" || S.phase === "summary") return showStart();
   const sid = S.sid;
@@ -383,25 +454,20 @@ function showReview(r, took) {
   cg.setShapes(userShapes);
   cg.setAutoShapes(auto);
   const n = r.threats.length;
-  let head, cls;
-  if (!n) {
-    cls = res.ok ? "ok" : "fail";
-    head = res.ok ? "Верно: угроз нет" : "Здесь угроз не было";
-  } else {
-    cls = res.ok ? "ok" : "fail";
-    head = res.ok ? (n === 1 ? "Верно: угроза найдена" : `Верно: найдены все ${n}`) : `Найдено ${res.found.length} из ${n}`;
-  }
-  const lines = res.lines.map((l) => `<li class="${l.startsWith("найдено") ? "found" : "missed"}">${esc(l)}</li>`);
-  for (const l of res.extra_lines || []) lines.push(`<li class="extra">${esc(l)}</li>`);
-  const where = [r.source, r.motif].filter(Boolean).join(" · ") + (r.repeat ? " · повтор" : "");
-  const link = r.ref && r.ref.startsWith("http") ? ` · <a href="${esc(r.ref)}" target="_blank" rel="noopener">открыть</a>` : "";
+  let head;
+  if (!n) head = res.ok ? "✓ Угроз нет — верно" : "✗ Здесь угроз не было";
+  else if (res.ok) head = n === 1 ? "✓ Верно" : `✓ Верно, все ${n}`;
+  else if (!res.missed.length) head = "✗ Лишняя стрелка";
+  else head = `✗ Пропущено ${res.missed.length} из ${n}`;
+  const items = [];
+  for (const it of res.items || []) items.push(`<li class="${it.found ? "found" : "missed"}">${esc(it.text)}${it.detail && !it.found ? `<small>${esc(it.detail)}</small>` : ""}</li>`);
+  for (const x of res.extras || []) items.push(`<li class="extra">${esc(x.text)}${x.detail ? `<small>${esc(x.detail)}</small>` : ""}</li>`);
   const last = S.index + 1 >= S.size;
   panel.innerHTML = `
-    <div class="step"><span>Позиция ${S.index + 1} из ${S.size} · ${sec(took)}</span>${exitButton()}</div>
-    <div class="prog"><i style="width:${((S.index + 1) / S.size) * 100}%"></i></div>
-    <div class="result ${cls}"><h3>${head}</h3>${lines.length ? `<ul>${lines.join("")}</ul>` : ""}</div>
-    <p class="hint">${esc(where)}${link}</p>
-    <button class="btn primary big" id="next">${last ? "Итог сессии" : "Дальше"}</button>`;
+    ${barHTML(S.index + 1, S.size)}
+    <div class="verdict ${res.ok ? "ok" : "fail"}">${head}</div>
+    ${items.length ? `<ul class="items">${items.join("")}</ul>` : ""}
+    <button class="btn primary big" id="next">${last ? "Итог" : "Дальше"}</button>`;
   $("#next").addEventListener("click", next);
   $("#next").focus();
 }
@@ -413,25 +479,23 @@ async function next() {
   try { showPosition(await api("/api/next", { session: S.sid })); } catch (e) { $("#next").disabled = false; panel.insertAdjacentHTML("beforeend", `<p class="hint">${esc(e.message)}</p>`); }
 }
 
-function showSummary(s) {
+async function showSummary(s) {
   S.phase = "summary";
   S.reviewShapes = null;
   wrap.classList.add("locked");
   cg.setShapes([]);
   cg.setAutoShapes([]);
+  await loadProgress();
+  const sc = s.score || {};
   panel.innerHTML = `
-    <h2>Сессия окончена</h2>
-    <div class="stats">
-      <span>Угроз найдено</span><b>${s.found} из ${s.threats}</b>
-      <span>Позиций с угрозой без единого промаха</span><b>${s.threat_ok} из ${s.threat_positions}</b>
-      <span>Тихих позиций отвечено верно</span><b>${s.quiet_ok} из ${s.quiet}</b>
-      <span>Лишних стрелок</span><b>${s.extra}</b>
-      <span>В среднем на позицию</span><b>${sec(s.median_ms)}</b>
-    </div>
-    <p class="hint">Пропущенные позиции вернутся завтра, потом через 3 дня, неделю, две недели и месяц.</p>
+    ${heroHTML("за эту сессию")}
+    <p class="muted">Верно ${(sc.threat_ok ?? 0) + (sc.quiet_ok ?? 0)} из ${sc.n ?? s.positions} · ${Math.round((s.median_ms || 0) / 1000)} с на позицию</p>
+    <div class="chart" id="ch-rating"></div>
+    <div class="chart" id="ch-time"></div>
     <button class="btn primary big" id="again">Ещё сессия</button>
-    <button class="btn quiet" id="home">К началу</button>`;
-  $("#again").addEventListener("click", async () => { $("#again").disabled = true; try { showPosition(await api("/api/session", {})); } catch (e) { $("#again").disabled = false; panel.insertAdjacentHTML("beforeend", `<p class="hint">${esc(e.message)}</p>`); } });
+    <button class="btn quiet" id="home">На главный</button>`;
+  drawCharts();
+  $("#again").addEventListener("click", async () => { $("#again").disabled = true; try { showPosition(await api("/api/session", {})); } catch (e) { $("#again").disabled = false; $("#again").textContent = e.message; } });
   $("#home").addEventListener("click", showStart);
   $("#again").focus();
 }

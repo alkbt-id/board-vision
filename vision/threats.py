@@ -161,31 +161,30 @@ def analyse(after: chess.Board) -> dict | None:
     return {"threats": threats, "defended": sorted(defended), "exchanges": exchanges}
 
 
-def describe(threat: dict, after: chess.Board) -> str:
-    """«слон d4 — бьёт ферзь d8» / «пешка e5 — бьют: пешка d4, конь f3» / «мат в один ход: Qh7# — ферзь d3»."""
-    def who(square: str) -> str:
-        p = after.piece_at(chess.parse_square(square))
-        return f"{NAME[p.piece_type]} {square}" if p else square
+def _who(after: chess.Board, square: str) -> str:
+    p = after.piece_at(chess.parse_square(square))
+    return f"{NAME[p.piece_type]} {square}" if p else square
 
+
+def describe(threat: dict, after: chess.Board) -> str:
+    """One threat in a few words: «слон d4 ← ферзь d8» / «пешка e5 ← пешка d4, конь f3» / «мат: Qh7#»."""
     attackers = sorted(threat["attackers"], key=lambda s: ORDER[after.piece_type_at(chess.parse_square(s)) or chess.PAWN])
     if threat["piece"] is None:
-        more = len(threat.get("targets") or []) - 1
-        also = f" (и ещё {more} {'поле' if more == 1 else 'поля'} мата)" if more > 0 else ""
-        return f"мат в один ход: {threat['san']} — {', '.join(who(s) for s in attackers)}{also}"
-    by = f"бьёт {who(attackers[0])}" if len(attackers) == 1 else "бьют: " + ", ".join(who(s) for s in attackers)
-    tail = " — и это мат" if threat["mate"] else ""
-    return f"{who(threat['target'])} — {by}{tail}{swap_text(threat.get('exchange'))}"
+        return f"мат: {threat['san']}"
+    tail = ", и это мат" if threat["mate"] else ""
+    return f"{_who(after, threat['target'])} ← {', '.join(_who(after, s) for s in attackers)}{tail}"
 
 
 def swap_text(ex: dict | None) -> str:
-    """«; размен Nxe5 Nxe5 dxe5 — соперник +1» / «; если взять обратно: Rxe5 Rxe5 Rxe5 — соперник +3»."""
+    """The exchange behind a threat, for the small line under it: «размен hxg6 Qxg6 → соперник +2» /
+    «взять обратно: Rxe5 Rxe5 Rxe5 → соперник +3»; "" when there is no exchange to show."""
     if not ex:
         return ""
     if len(ex["line"]) > 1:
-        return f"; размен {' '.join(ex['line'])} — соперник {signed(ex['gain'])}"
+        return f"размен {' '.join(ex['line'])} → соперник {signed(ex['gain'])}"
     back = ex.get("if_recapture")
     if back:
-        return f"; если взять обратно: {' '.join(back['line'])} — соперник всё равно {signed(back['gain'])}"
+        return f"взять обратно: {' '.join(back['line'])} → соперник всё равно {signed(back['gain'])}"
     return ""
 
 
@@ -193,36 +192,31 @@ def signed(n: int) -> str:
     return f"+{n}" if n > 0 else "±0" if n == 0 else f"−{-n}"
 
 
-def explain_extra(extra: dict, answer: dict, after: chess.Board) -> str:
-    """Why an arrow was extra, in words."""
+def explain_extra(extra: dict, answer: dict, after: chess.Board) -> dict:
+    """Why an arrow was extra: {"text": short, "detail": the exchange or the real attacker, may be ""}."""
     a, b = extra["from"], extra["to"]
-    head = f"лишняя стрелка {a}→{b}: "
-    me = after.turn
+    head = f"{a}→{b}"
     if extra["why"] == "defended":
         square = b if b in answer["defended"] else a
         ex = (answer.get("exchanges") or {}).get(square)
-        if ex and ex["line"]:
-            return head + f"фигура защищена — размен {' '.join(ex['line'])}, и соперник {signed(ex['gain'])}"
-        return head + "фигура защищена — взять её без потерь нельзя"
-    def who(sq: str) -> str:
-        p = after.piece_at(chess.parse_square(sq))
-        return f"{NAME[p.piece_type]} {sq}" if p else sq
+        detail = f"размен {' '.join(ex['line'])} → соперник {signed(ex['gain'])}" if ex and ex["line"] else ""
+        return {"text": f"{head}: защищена", "detail": detail}
     if extra["why"] == "wrong_attacker":
         for t in answer["threats"]:
             if b in (t.get("targets") or []) or a in (t.get("targets") or []):
-                return head + "бьёт её не эта фигура, а " + ", ".join(who(x) for x in t["attackers"])
+                return {"text": f"{head}: бьёт другая фигура", "detail": ", ".join(_who(after, x) for x in t["attackers"])}
     for sq in (b, a):
         p = after.piece_at(chess.parse_square(sq)) if sq else None
-        if p and p.color == me:
-            return head + "эту фигуру никто не бьёт"
-    return head + "здесь нет твоей фигуры под ударом"
+        if p and p.color == after.turn:
+            return {"text": f"{head}: её никто не бьёт", "detail": ""}
+    return {"text": f"{head}: тут нечего брать", "detail": ""}
 
 
 def check(answer: dict, arrows: list[dict], after: chess.Board) -> dict:
     """Compare the user's arrows ({"from": "d8", "to": "d4"}) with the answer key.
 
     {"found": ["d4"], "missed": ["f7"], "extra": [{"from", "to", "why": "defended" | "not_attacked" | "wrong_attacker"}],
-     "ok": bool, "lines": [text, ...]}"""
+     "ok": bool, "items": [{"target", "found", "text", "detail"}], "extras": [{"text", "detail"}]}"""
     by_square = {sq: t for t in answer["threats"] for sq in t.get("targets") or [t["target"]]}
     found, extra = set(), []
     for arrow in arrows:
@@ -244,10 +238,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board) -> dict:
             why = "not_attacked"
         extra.append({"from": a, "to": b, "why": why})
     missed = [t["target"] for t in answer["threats"] if t["target"] not in found]
-    lines = []
-    for t in answer["threats"]:
-        mark = "найдено" if t["target"] in found else "пропущено"
-        lines.append(f"{mark}: {describe(t, after)}")
-    extra_lines = [explain_extra(x, answer, after) for x in extra]
-    return {"found": sorted(found), "missed": missed, "extra": extra, "ok": not missed and not extra, "lines": lines,
-            "extra_lines": extra_lines}
+    items = [{"target": t["target"], "found": t["target"] in found, "text": describe(t, after),
+              "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in answer["threats"]]
+    return {"found": sorted(found), "missed": missed, "extra": extra, "ok": not missed and not extra,
+            "items": items, "extras": [explain_extra(x, answer, after) for x in extra]}

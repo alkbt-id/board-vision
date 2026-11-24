@@ -164,6 +164,7 @@ def finish(sid: str) -> dict:
         "extra": sum(a["extra"] for a in ans),
         "median_ms": int(statistics.median(a["ms"] for a in ans)) if ans else 0,
         "size": len(s["items"]), "complete": len(ans) == len(s["items"]),
+        "score": _score(_first_answers(" AND a.session = ?", (sid,))),
     }
     s["summary"] = summary
     store.run("UPDATE sessions SET ended=?, summary=? WHERE id=?", (store.now_ms(), json.dumps(summary), sid))
@@ -179,6 +180,42 @@ def leave(sid: str) -> dict:
     events.log("session_exit", session=sid, index=s["index"], size=len(s["items"]),
                answered=len(s["answers"]), on_answered=s["index"] in s["answers"])
     return {"left": True, "summary": finish(sid)}
+
+
+def _first_answers(where: str = "", args: tuple = ()) -> list:
+    """Answers to positions seen for the first time (a repeat can be remembered, so it does not count)."""
+    return store.q(
+        "SELECT a.session, a.ts, a.n_threats > 0 AS threat, a.ok, a.ms FROM attempts a"
+        " WHERE a.id = (SELECT MIN(b.id) FROM attempts b WHERE b.item = a.item)" + where + " ORDER BY a.ts", args)
+
+
+def _score(rows: list) -> dict:
+    """Right answers, %, with positions with a threat and quiet ones weighing the same — so the share of quiet
+    positions (which grows over time) does not move it."""
+    t = [r["ok"] for r in rows if r["threat"]]
+    q = [r["ok"] for r in rows if not r["threat"]]
+    parts = [sum(x) / len(x) for x in (t, q) if x]
+    return {"pct": round(100 * sum(parts) / len(parts)) if parts else None, "n": len(rows),
+            "threat_ok": sum(t), "threat_n": len(t), "quiet_ok": sum(q), "quiet_n": len(q)}
+
+
+def progress(limit: int = 40) -> dict:
+    """The chart: the attention rating after each session (vision/rating.py) and the median seconds per position.
+    {"start": 1500, "rating": current, "points": [{session, ts, rating, n, median_s}, ...] oldest first}."""
+    from . import rating
+
+    by: dict[str, dict] = {}
+    for r in rating.replay():
+        p = by.setdefault(r["session"], {"session": r["session"], "ts": r["ts"], "n": 0, "ms": []})
+        p["rating"] = round(r["rating"])
+        p["n"] += 1
+        if r["ms"]:
+            p["ms"].append(r["ms"])
+    points = sorted((p for p in by.values() if p["n"] >= 3), key=lambda p: p["ts"])  # a sitting of 1–2 answers is noise
+    for p in points:
+        ms = p.pop("ms")
+        p["median_s"] = round(statistics.median(ms) / 1000, 1) if ms else None
+    return {"start": rating.START, "rating": points[-1]["rating"] if points else rating.START, "points": points[-limit:]}
 
 
 def history(days: int = 30) -> list[dict]:
