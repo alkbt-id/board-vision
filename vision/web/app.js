@@ -460,8 +460,11 @@ function showReview(r, took) {
   else if (!res.missed.length) head = "✗ Лишняя стрелка";
   else head = `✗ Пропущено ${res.missed.length} из ${n}`;
   const items = [];
-  for (const it of res.items || []) items.push(`<li class="${it.found ? "found" : "missed"}">${esc(it.text)}${it.detail && !it.found ? `<small>${esc(it.detail)}</small>` : ""}</li>`);
-  for (const x of res.extras || []) items.push(`<li class="extra">${esc(x.text)}${x.detail ? `<small>${esc(x.detail)}</small>` : ""}</li>`);
+  // one row per item: the mark in its own column, the text (and the exchange in small print) next to it
+  const row = (cls, mark, text, detail) =>
+    `<li class="${cls}"><span class="mk" aria-hidden="true">${mark}</span><span class="tx">${esc(text)}${detail ? `<small>${esc(detail)}</small>` : ""}</span></li>`;
+  for (const it of res.items || []) items.push(row(it.found ? "found" : "missed", it.found ? "✓" : "✗", it.text, it.found ? "" : it.detail));
+  for (const x of res.extras || []) items.push(row("extra", "·", x.text, x.detail));
   const last = S.index + 1 >= S.size;
   panel.innerHTML = `
     ${barHTML(S.index + 1, S.size)}
