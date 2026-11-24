@@ -1,6 +1,7 @@
 // «Видение доски» — the drill screen.
 // A position appears, the opponent makes his move, the user draws arrows "who takes -> whom" on every piece of his
-// that is now under attack (or presses «Угроз нет»), the server checks and the board shows the review.
+// that is now under attack and from his own pieces to every piece of the opponent he can win now (or presses
+// «Ничего нет»), the server checks and the board shows the review.
 // Every action goes to the event log (POST /api/log) so a session can be watched live and analysed later.
 import { Chessground } from "./vendor/chessground/chessground.min.js";
 
@@ -75,6 +76,8 @@ const cg = Chessground($("#board"), {
       grey: { key: "gr", color: "#4a4a4a", opacity: 0.45, lineWidth: 10 },
       paleGreen: { key: "pg", color: "#15781B", opacity: 0.4, lineWidth: 15 },
       paleOrange: { key: "po", color: "#e07b00", opacity: 0.45, lineWidth: 15 },
+      chance: { key: "ch", color: "#7b4fd6", opacity: 1, lineWidth: 10 }, // your chances: arrows from your pieces
+      paleChance: { key: "pch", color: "#7b4fd6", opacity: 0.45, lineWidth: 15 },
     },
     // right-button arrows, drawn by chessground itself
     onChange: (shapes) => syncArrows(shapes, "mouse-right"),
@@ -88,8 +91,11 @@ let arrows = [];
 let myMove = null; // «проверь свой ход»: your own move, the first arrow you draw (blue); the rest are his replies
 const drawingNow = () => S.phase === "draw" || S.phase === "plan";
 const sameLine = (a, b) => (a.from === b.from && a.to === b.to) || (a.from === b.to && a.to === b.from);
+// an arrow from your own piece, while you mark threats, is a chance of yours: purple; from his piece — orange
+const mine = (sq) => !!S.v && cg.state.pieces.get(sq)?.color === S.v.orientation;
+const brushOf = (from, pale = false) => (S.phase === "draw" && mine(from) ? (pale ? "paleChance" : "chance") : pale ? "paleOrange" : "orange");
 const toShapes = (list) => [...(myMove ? [{ orig: myMove.from, dest: myMove.to, brush: "blue" }] : []),
-  ...list.map((a) => ({ orig: a.from, dest: a.to, brush: "orange" }))];
+  ...list.map((a) => ({ orig: a.from, dest: a.to, brush: brushOf(a.from) }))];
 // the first arrow in a plan: your move, if it is one
 function tryMove(from, to, how) {
   const ok = (S.v?.dests?.[from] || []).includes(to);
@@ -193,12 +199,13 @@ function setPick(key) {
   cg.set({ highlight: { custom: key ? new Map([[key, "from-pick"]]) : new Map() } });
 }
 function preview(from, to) {
-  cg.setAutoShapes(from && to && from !== to ? [{ orig: from, dest: to, brush: S.phase === "plan" && !myMove ? "paleBlue" : "paleOrange" }] : []);
+  cg.setAutoShapes(from && to && from !== to ? [{ orig: from, dest: to, brush: S.phase === "plan" && !myMove ? "paleBlue" : brushOf(from, true) }] : []);
 }
 // Where a finger meant to end. A finger hides the square and the lift often slides on by a square (the user aimed
 // d2→e2 and got d2→f2): take the square the finger was on a moment before it left the glass, and if the arrow
-// runs along a line past one of your pieces onto an empty square, stop it at that piece — an arrow always ends
-// on your piece, except a mate on an empty square, and a mating move's path never crosses a piece.
+// runs along a line past a piece of the other side onto an empty square, stop it at that piece — an arrow always
+// ends on a piece of the other colour than where it starts (his piece → yours, a threat; yours → his, a chance),
+// except a mate on an empty square, and a mating move's path never crosses a piece.
 const LIFT_MS = 120;
 function aimedEnd(from, trail, upKey, upTime) {
   let end = upKey;
@@ -213,11 +220,12 @@ function snapToPiece(from, to) {
   const f0 = from.charCodeAt(0), r0 = +from[1], f1 = to.charCodeAt(0), r1 = +to[1];
   const df = Math.sign(f1 - f0), dr = Math.sign(r1 - r0);
   if (!(f0 === f1 || r0 === r1 || Math.abs(f1 - f0) === Math.abs(r1 - r0))) return to; // not along a line
-  const me = S.v?.orientation;
+  const start = cg.state.pieces.get(from);
+  const want = start ? (start.color === "white" ? "black" : "white") : S.v?.orientation;
   for (let f = f0 + df, r = r0 + dr; f !== f1 || r !== r1; f += df, r += dr) {
     const k = String.fromCharCode(f) + r;
     const p = cg.state.pieces.get(k);
-    if (p) return p.color === me ? k : to;
+    if (p) return p.color === want ? k : to;
   }
   return to;
 }
@@ -270,7 +278,7 @@ function syncMode() {
   const ph = S.phase, rv = ph === "review" ? S.review : null;
   let kind = "", text = "", label = "", act = null;
   if (ph === "wait") { kind = "wait"; text = S.waitText || ""; }
-  else if (ph === "draw") { kind = "threats"; text = "Угрозы соперника"; label = arrows.length ? "Готово" : "Угроз нет"; act = check; }
+  else if (ph === "draw") { kind = "threats"; text = "Угрозы и шансы"; label = arrows.length ? "Готово" : "Ничего нет"; act = check; }
   else if (ph === "plan") {
     if (myMove) { kind = "threats"; text = "Его ответы"; label = "Хожу"; act = commitMove; }
     else { kind = "move"; text = S.v?.check ? "Шах! Твой ход" : "Твой ход"; label = "Хожу"; }
@@ -498,7 +506,7 @@ async function loadProgress() {
 
 const RULES = `
   <details class="rules"><summary>Как это работает</summary>
-    <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле. И на поле мата в один ход. Нет угроз — «Угроз нет».</p>
+    <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле, и на поле мата в один ход — это угрозы (оранжевые). И то же самое для себя: от твоей фигуры к его фигуре, которую ты можешь выиграть прямо сейчас, — это шансы (фиолетовые). Нечего отмечать — «Ничего нет».</p>
     <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — ↶ над доской, Backspace или та же стрелка ещё раз. Закончил — кнопка в цветной полосе над доской или Enter.</p>
     <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
     <p>Серия: соперник ходит — отмечаешь угрозы — ходишь сам — отвечает бот уровня 1300 — снова отмечаешь… Серия без промахов делает следующую на ход длиннее, две серии с промахами подряд — на ход короче. Длина 1 — одна позиция.</p>
@@ -699,9 +707,10 @@ async function check() {
   catch (e) { S.phase = "draw"; flashTask(`Не получилось: ${e.message}`); return; }
   S.v = v;
   S.marks = [...(S.marks || []), !!v.result.ok];
-  const r = { result: v.result, threats: v.threats };
+  const r = { result: v.result, threats: v.threats, chances: v.chances || [] };
   if (v.phase === "plan") {
-    const hints = v.threats.flatMap((t) => missedArrows(t, false, "paleOrange"));
+    const hints = [...v.threats.flatMap((t) => missedArrows(t, false, "paleOrange")),
+      ...r.chances.flatMap((t) => missedArrows(t, false, "paleChance"))];
     if (v.result.ok) return startPlan(v, hints); // all found: no stop, your move at once
     const toPlan = (how) => { log("next_click", { ms: ms(), to: "plan", how }); startPlan(v, hints); };
     showReview(r, () => toPlan("button"));
@@ -769,11 +778,11 @@ function showReview(r, onNext) {
     return marked({ orig: a.from, dest: a.to, brush: right ? "green" : "grey" }, right ? "ok" : "extra");
   });
   const auto = [];
-  for (const t of r.threats) if (!found.has(t.target)) auto.push(...missedArrows(t, true));
+  for (const t of [...r.threats, ...r.chances]) if (!found.has(t.target)) auto.push(...missedArrows(t, true));
   S.reviewShapes = userShapes;
   cg.setShapes(userShapes);
   cg.setAutoShapes(auto);
-  S.review = { kind: res.ok ? "ok" : "fail", text: verdict(res, r.threats.length), label: "Дальше", onNext };
+  S.review = { kind: res.ok ? "ok" : "fail", text: verdict(res, res.n ?? r.threats.length), label: "Дальше", onNext };
   syncMode();
 }
 

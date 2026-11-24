@@ -36,7 +36,7 @@ def test_knight_move_opens_the_d_file_on_the_bishop():
 
 def test_quiet_opening_position_has_no_threats():
     answer = threats.analyse(chess.Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"))
-    assert answer == {"threats": [], "defended": [], "exchanges": {}}
+    assert answer == {"threats": [], "defended": [], "exchanges": {}, "chances": []}
 
 
 def test_battery_wins_a_knight_a_single_rook_does_not():
@@ -179,3 +179,26 @@ def test_a_fair_looking_trade_that_loses_gets_its_line():
     key = {"threats": [], "defended": [], "attacks": [{**threats.reply_item(after, reply, 400), "line": line}]}
     assert threats.check_own(key, [{"from": "b4", "to": "c2"}], after)["ok"]
     assert not threats.check_own(key, [], after)["ok"]
+def test_chance_is_what_you_can_win_yourself():
+    # white to move; the black knight on a5 hangs to the rook on a1, nothing of white's is attacked
+    after = chess.Board("4k3/8/8/n7/8/8/8/R3K3 w - - 0 1")
+    answer = threats.analyse(after)
+    assert answer["threats"] == []
+    assert [(t["attackers"], t["target"]) for t in answer["chances"]] == [(["a1"], "a5")]
+    assert threats.check(answer, [{"from": "a1", "to": "a5"}], after)["ok"]
+    assert threats.check(answer, [], after)["missed"] == ["a5"]
+    # answers given before chances were asked for are checked without them
+    old = threats.check(answer, [], after, with_chances=False)
+    assert old["ok"] and old["n"] == 0 and not old["chances"]
+
+
+def test_threat_and_chance_on_the_same_line_go_by_the_arrow_direction():
+    # rooks a1 and a5 face each other, neither defended: he can take a1 (threat), you can take a5 (chance)
+    after = chess.Board("4k3/8/8/r7/8/8/8/R3K3 w - - 0 1")
+    answer = threats.analyse(after)
+    threat = threats.check(answer, [{"from": "a5", "to": "a1"}], after)
+    assert threat["found"] == ["a1"] and threat["missed"] == ["a5"]
+    chance = threats.check(answer, [{"from": "a1", "to": "a5"}], after)
+    assert chance["found"] == ["a5"] and chance["missed"] == ["a1"]
+    both = threats.check(answer, [{"from": "a5", "to": "a1"}, {"from": "a1", "to": "a5"}], after)
+    assert both["ok"] and both["n"] == 2

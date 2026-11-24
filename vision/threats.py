@@ -12,8 +12,12 @@ The position is the one right after the opponent's move, with the user to move. 
 Both are found by handing the move back to the opponent (a null move) and looking at his legal moves.
 A position where the user is in check is not a drill position (`analyse` returns None).
 
+Chances (2026-11-24) are the same rule turned round: what the user himself can win right now — his captures that
+come out ahead after the whole exchange, his pawn walking in to queen, his mate in one. They are marked in the same
+step, with arrows from his pieces.
+
 The user answers with arrows "who takes -> whom": an arrow counts when it goes from a piece that can take (or
-mate) to the threatened square; the opposite direction counts too.
+mate) to the threatened square; the opposite direction counts too, unless it is itself a threat or a chance.
 """
 
 import chess
@@ -130,14 +134,17 @@ def analyse(after: chess.Board) -> dict | None:
 
     {"threats": [{"target": "d4", "piece": "B", "attackers": ["d8"], "best": "d8d4", "san": "Qxd4",
                   "gain": 3, "mate": false}, ...],
-     "defended": ["c7", ...]}   — the user's pieces the opponent attacks that are safe (an exchange there loses)
+     "defended": ["c7", ...],   — the user's pieces the opponent attacks that are safe (an exchange there loses)
+     "chances": [...]}          — what the user can win himself right now, in the same form as "threats"
     None when the side to move is in check or the game is over.
     """
     if after.is_check() or after.is_game_over():
         return None
     board = after.copy(stack=False)
     board.push(chess.Move.null())
-    return opponent_key(board)
+    key = opponent_key(board)
+    key["chances"] = opponent_key(after.copy(stack=False))["threats"]
+    return key
 
 
 def opponent_key(board: chess.Board) -> dict:
@@ -266,23 +273,31 @@ def explain_extra(extra: dict, answer: dict, after: chess.Board) -> dict:
     return {"text": f"{head}: тут нечего брать", "detail": ""}
 
 
-def check(answer: dict, arrows: list[dict], after: chess.Board) -> dict:
-    """Compare the user's arrows ({"from": "d8", "to": "d4"}) with the answer key.
+def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bool = True) -> dict:
+    """Compare the user's arrows ({"from": "d8", "to": "d4"}) with the answer key: his threats and, with
+    `with_chances` (answers given before 2026-11-24 were not asked for them), the user's own chances.
 
     {"found": ["d4"], "missed": ["f7"], "extra": [{"from", "to", "why": "defended" | "not_attacked" | "wrong_attacker"}],
-     "ok": bool, "items": [{"target", "found", "text", "detail"}], "extras": [{"text", "detail"}]}"""
-    by_square = {sq: t for t in answer["threats"] for sq in t.get("targets") or [t["target"]]}
+     "ok": bool, "n": threats + chances asked, "chances": with_chances,
+     "items": [{"target", "found", "text", "detail"}], "extras": [{"text", "detail"}]}"""
+    keys = [*answer["threats"], *((answer.get("chances") or []) if with_chances else [])]
+    by_square: dict[str, list[dict]] = {}
+    for t in keys:
+        for sq in t.get("targets") or [t["target"]]:
+            by_square.setdefault(sq, []).append(t)
+
+    def match(frm: str | None, to: str | None) -> dict | None:
+        for t in by_square.get(to, []):
+            if frm in t["attackers"] or frm in (t.get("xray") or []):
+                return t
+        return None
+
     found, extra = set(), []
     for arrow in arrows:
         a, b = arrow.get("from"), arrow.get("to")
-        hit = None
-        for frm, to in ((a, b), (b, a)):
-            t = by_square.get(to)
-            if t and (frm in t["attackers"] or frm in (t.get("xray") or [])):
-                hit = t["target"]
-                break
-        if hit:
-            found.add(hit)
+        t = match(a, b) or match(b, a)  # as drawn first: a threat and a chance can share two squares
+        if t:
+            found.add(t["target"])
             continue
         if b in by_square or a in by_square:
             why = "wrong_attacker"
@@ -291,10 +306,11 @@ def check(answer: dict, arrows: list[dict], after: chess.Board) -> dict:
         else:
             why = "not_attacked"
         extra.append({"from": a, "to": b, "why": why})
-    missed = [t["target"] for t in answer["threats"] if t["target"] not in found]
+    missed = [t["target"] for t in keys if t["target"] not in found]
     items = [{"target": t["target"], "found": t["target"] in found, "text": describe(t, after),
-              "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in answer["threats"]]
+              "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in keys]
     return {"found": sorted(found), "missed": missed, "extra": extra, "ok": not missed and not extra,
+            "n": len(keys), "chances": with_chances,
             "items": items, "extras": [explain_extra(x, answer, after) for x in extra]}
 
 

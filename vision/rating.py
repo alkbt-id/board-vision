@@ -22,6 +22,8 @@ describe in «Невидимые шахматные ходы» and what the rese
   mate          the opponent mates
   promotion     a pawn walks in to queen
   decoys        quiet position: pieces of yours that are attacked but safe (they look like threats), up to 2
+  chance        there is something of his to win yourself (marked in the same step since 2026-11-24; counted only
+                for answers that were asked for it), each one beyond the first adds to «more»
 The check of your own move («проверь свой ход», vision/play.commit) is scored on the same scale with its own points:
   own           it is your own move: the position after it has to be imagined (+100)
   attack        a fork or a new attack on your queen to see, not only a capture (+150)
@@ -44,6 +46,7 @@ ETA = 4  # how fast the difficulty points learn
 WEIGHTS = {
     "threat": 300, "more": 100, "discovered": 150, "old": 100, "backward": 100, "horizontal": 75, "long": 50,
     "knight": 50, "exchange": 150, "mate": 50, "promotion": 100, "decoys": 100, "own": 100, "attack": 150,
+    "chance": 200,
 }
 
 
@@ -108,6 +111,21 @@ def features_own(answer: dict) -> dict[str, float]:
     return f
 
 
+def with_chances(f: dict[str, float], answer_json: str, result_json: str | None) -> dict[str, float]:
+    """`f` plus the chances of the position, when the answer was asked for them."""
+    import json
+    if not result_json or not json.loads(result_json).get("chances"):
+        return f
+    n = len(json.loads(answer_json).get("chances") or [])
+    if not n:
+        return f
+    f = dict(f)
+    f.pop("decoys", None)  # a position with something to win is not a quiet one
+    f["chance"] = 1.0
+    f["more"] = f.get("more", 0.0) + n - (0 if "threat" in f else 1)
+    return f
+
+
 def _threat_before(before: chess.Board, square: int) -> bool:
     """Could the opponent already win the piece on `square` before his move (it is his move in `before`)?"""
     for m in before.generate_legal_captures(to_mask=chess.BB_SQUARES[square]):
@@ -145,7 +163,8 @@ def replay() -> list[dict]:
     """Every first-time answer in order, with the rating after it: [{session, ts, rating, difficulty, score, ms}].
     The difficulty points learn along the way, so the whole history is replayed from the start each time."""
     rows = store.q(
-        "SELECT a.session, a.ts, a.ms, a.n_threats, a.found, a.extra, i.id AS item, i.fen, i.move, i.answer, i.source"
+        "SELECT a.session, a.ts, a.ms, a.n_threats, a.found, a.extra, a.result, i.id AS item, i.fen, i.move, i.answer,"
+        " i.source"
         " FROM attempts a JOIN items i ON i.id = a.item"
         " WHERE a.id = (SELECT MIN(b.id) FROM attempts b WHERE b.item = a.item) ORDER BY a.ts")
     w = dict(WEIGHTS)
@@ -153,6 +172,8 @@ def replay() -> list[dict]:
     out = []
     for r in rows:
         f = _item_features(r["item"], r["fen"], r["move"], r["answer"], r["source"])
+        if r["source"] != "ownmove":
+            f = with_chances(f, r["answer"], r["result"])
         diff = BASE + sum(w.get(k, 0) * v for k, v in f.items())
         e = expected(diff, rating)
         s = score(r["n_threats"] or 0, r["found"] or 0, r["extra"] or 0)

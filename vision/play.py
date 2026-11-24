@@ -200,9 +200,10 @@ def answer(pid: str, arrows: list[dict], ms: int) -> dict:
     if p["phase"] != "check":
         raise ValueError("сейчас не проверка")
     board: chess.Board = p["board"]
-    key = threats.analyse(board) or {"threats": [], "defended": []}
+    key = threats.analyse(board) or {"threats": [], "defended": [], "chances": []}
     arrows = [{"from": str(a.get("from")), "to": str(a.get("to"))} for a in arrows[:30] if isinstance(a, dict)]
     result = threats.check(key, arrows, board)
+    chances = key.get("chances") or []
     item_id = p["item"]
     if item_id is None:  # a position reached in play: store it like a pool position
         store.add_item("series", p["last"]["fen"], p["last"]["move"], "w" if p["user"] == chess.WHITE else "b", key,
@@ -210,17 +211,18 @@ def answer(pid: str, arrows: list[dict], ms: int) -> dict:
         row = store.q("SELECT id FROM items WHERE key = ?", (f"series|{p['last']['fen']}|{p['last']['move']}",))
         item_id = row[0]["id"] if row else None
     if item_id is not None:
-        store.record(item_id, pid, ms, len(key["threats"]), result, arrows)
+        store.record(item_id, pid, ms, result["n"], result, arrows)
     sr = p["series"]
     p["checks"] += 1
     sr["checks"] += 1
     sr["misses"] += not result["ok"]
-    p["answers"].append({"ok": result["ok"], "threats": len(key["threats"]), "found": len(result["found"]),
+    p["answers"].append({"ok": result["ok"], "threats": result["n"], "found": len(result["found"]),
                          "extra": len(result["extra"]), "ms": ms})
     events.log("answer", session=pid, index=p["checks"] - 1, size=CHECKS, item=item_id, ok=result["ok"],
-               threats=len(key["threats"]), found=result["found"], missed=result["missed"], extra=result["extra"],
+               threats=len(key["threats"]), chances=len(chances), found=result["found"], missed=result["missed"],
+               extra=result["extra"],
                arrows=arrows, ms=ms, series=p["series_no"], step=sr["checks"])
-    extra: dict = {"result": result, "threats": key["threats"]}
+    extra: dict = {"result": result, "threats": key["threats"], "chances": chances}
     if sr["checks"] >= sr["length"] or board.is_game_over():
         extra["series_end"] = _end_series(p, game_over=board.is_game_over())
         p["phase"] = "next"

@@ -7,6 +7,8 @@ History:
   1  captures that win material (the whole exchange) and mates in one
   2  + a pawn walking in to queen (2026-11-24: the user drew b2→b1 and got «лишняя стрелка»)
   3  + an arrow from a piece behind an attacker (a battery: Bc4 behind d5 on e6) counts (2026-11-24)
+  4  + chances: what the user can win himself, marked in the same step (2026-11-24). Answers given before were not
+     asked for them and are checked without them (their stored result has no "chances": true)
 """
 
 import json
@@ -15,7 +17,7 @@ import chess
 
 from . import events, store, threats
 
-RULE_VERSION = "3"
+RULE_VERSION = "4"
 
 
 def run() -> None:
@@ -35,13 +37,14 @@ def run() -> None:
         keys[row["id"]] = (answer, after)
         items += 1
     rescored = to_ok = to_wrong = 0
-    for a in store.q("SELECT id, item, arrows, ok FROM attempts"):
+    for a in store.q("SELECT id, item, arrows, ok, result FROM attempts"):
         if a["item"] not in keys:
             continue
         answer, after = keys[a["item"]]
-        res = threats.check(answer, json.loads(a["arrows"] or "[]"), after)
+        asked = bool(json.loads(a["result"] or "{}").get("chances"))
+        res = threats.check(answer, json.loads(a["arrows"] or "[]"), after, with_chances=asked)
         store.run("UPDATE attempts SET n_threats=?, found=?, missed=?, extra=?, ok=?, result=? WHERE id=?",
-                  (len(answer["threats"]), len(res["found"]), len(res["missed"]), len(res["extra"]), int(res["ok"]),
+                  (res["n"], len(res["found"]), len(res["missed"]), len(res["extra"]), int(res["ok"]),
                    json.dumps(res, ensure_ascii=False), a["id"]))
         rescored += 1
         to_ok += bool(res["ok"]) and not a["ok"]

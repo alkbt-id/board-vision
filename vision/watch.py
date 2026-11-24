@@ -60,11 +60,12 @@ def line(e: dict) -> str | None:
         case "check_click":
             return None
         case "answer":
-            n = e.get("threats", 0)
+            n = e.get("threats", 0) + e.get("chances", 0)
             drawn = len(e.get("arrows") or [])
-            label = "«Угроз нет»" if not drawn else f"«Проверить» (стрелок {drawn})"
+            label = "«Ничего нет»" if not drawn else f"«Готово» (стрелок {drawn})"
             head = f"{label} через {sec(e.get('ms'))} → " + ("✔" if e.get("ok") else "✘")
-            parts = [f"найдено {len(e.get('found', []))}/{n}"] if n else ["тихая позиция"]
+            what = f" (угроз {e.get('threats', 0)}, шансов {e['chances']})" if e.get("chances") else ""
+            parts = [f"найдено {len(e.get('found', []))}/{n}{what}"] if n else ["тихая позиция"]
             if e.get("missed"):
                 parts.append("пропущено " + ", ".join(e["missed"]))
             if e.get("extra"):
