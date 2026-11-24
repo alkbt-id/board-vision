@@ -443,9 +443,11 @@ function renderMoves() {
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 // ---------- board size: as big as the window allows ----------
-// While you play the moves go where the board stays biggest: on the right of a wide window, under it in a tall one
-// (the user, 2026-11-24: «в зависимости от ориентации рисуй или справа или снизу»).
+// The panel beside the board goes where the board stays biggest: on the right of a wide window, under it in a tall
+// one — the moves while you play (the user, 2026-11-24: «в зависимости от ориентации рисуй или справа или снизу»),
+// the rating and the charts on the start screen («тоже надо учитывать пропорции экрана»).
 const MOVES_H = 132; // the moves under the board: about four lines
+const PANEL_H = 360; // the start screen's panel under the board
 function layout() {
   const app = $(".app"), playing = app.classList.contains("playing");
   const top = $(".top").getBoundingClientRect().height;
@@ -458,10 +460,17 @@ function layout() {
     below = under > right;
     size = below ? under : right;
   } else {
-    const side = window.innerWidth <= 820 ? 0 : parseInt(getComputedStyle(document.documentElement).getPropertyValue("--side-w")) + 14;
-    size = fit(H, W - side);
+    // under the board the panel lays its content out in two columns (rating and button | charts): PANEL_H is enough
+    const sideW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--side-w"));
+    const right = fit(H, W - sideW - 14), under = fit(H - PANEL_H - 14, W);
+    below = under > right;
+    size = below ? under : right;
+    const side = $(".side");
+    side.style.width = below ? `${size}px` : "";
+    side.style.maxHeight = below ? `${Math.max(PANEL_H, H - size - 14)}px` : ""; // as tall as its content, at most this
   }
   app.classList.toggle("moves-below", playing && below);
+  app.classList.toggle("side-below", !playing && below);
   wrap.style.width = wrap.style.height = `${size}px`;
   $("#board-mode").style.width = `${size}px`;
   const moves = $("#moves");
@@ -622,7 +631,7 @@ async function showStart() {
     <p class="muted center" id="level"></p>
     ${RULES}`;
   $("#go").addEventListener("click", startPlay);
-  drawCharts();
+  layout(); // the panel's height is known now: beside the board or under it (and the charts drawn at its width)
   await refreshState();
 }
 
