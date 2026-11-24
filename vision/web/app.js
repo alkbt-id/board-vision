@@ -422,7 +422,7 @@ function updateCheckButton() {
 function drawPanel(bar, task) {
   panel.innerHTML = `
     ${bar}
-    <p class="task" id="task">${task}</p>
+    ${turnHTML(task, "task")}
     <div class="arrow-list" id="arrow-list" hidden></div>
     <button class="btn" id="undo" disabled title="Убрать последнюю стрелку (Backspace или ⌘Z)">Отменить</button>
     <button class="btn primary big" id="check" disabled>Угроз нет</button>`;
@@ -437,7 +437,7 @@ function startDrawing(item) {
   S.phase = "draw";
   S.shownAt = performance.now();
   lastActive = performance.now();
-  $("#task").textContent = "Что под ударом?";
+  $("#task .tt").textContent = "Что под ударом?";
   $("#check").disabled = false;
   renderArrows();
   log("move_shown", { item });
@@ -446,8 +446,19 @@ function startDrawing(item) {
 function lockBoard() {
   cg.set({ movable: { color: undefined, dests: new Map() }, draggable: { enabled: false }, selectable: { enabled: false } });
 }
-// «серия 2 · ход 1 из 3» over the question — small, only when the series is longer than one check
-const stepLine = (v) => (v.series.length > 1 ? `<p class="step-line">ход ${Math.min(v.series.checks + 1, v.series.length)} из ${v.series.length}</p>` : "");
+// the series as big dots, like a puzzle streak: ✓ green, ✗ red, the current one ringed, the rest empty
+function streakHTML(v, active = true) {
+  const n = v.series.length, marks = S.marks || [];
+  let dots = "";
+  for (let i = 0; i < n; i++) {
+    const cls = i < marks.length ? (marks[i] ? "ok" : "miss") : i === marks.length && active ? "now" : "todo";
+    dots += `<span class="dot ${cls}">${cls === "ok" ? "✓" : cls === "miss" ? "✕" : ""}</span>`;
+  }
+  return `<div class="streak" aria-label="серия: ${marks.length} из ${n}">${dots}</div>`;
+}
+// a big line with a square of your colour, as on Lichess: «Твой ход», «Что под ударом?»
+const turnHTML = (text, id = "") => `<div class="turn"${id ? ` id="${id}"` : ""}><span class="who ${S.v?.orientation || "white"}"></span><span class="tt">${text}</span></div>`;
+const head = (v, active = true) => barHTML(v.checks - (active ? 0 : 1), v.budget) + streakHTML(v, active);
 
 async function startPlay() {
   const b = $("#go");
@@ -470,9 +481,10 @@ function playShow(v) {
   wrap.classList.remove("locked");
   cg.setShapes([]);
   cg.setAutoShapes([]);
+  if (v.new_series) S.marks = [];
   if (!v.bot) return playStep(v);
   S.phase = "wait";
-  drawPanel(barHTML(v.checks, v.budget) + stepLine(v), v.new_series ? "Соперник ходит…" : "Бот ходит…");
+  drawPanel(head(v), v.new_series ? "Соперник ходит…" : "Бот ходит…");
   if (v.new_series) {
     cg.set({ animation: { enabled: false } });
     cg.set({ fen: v.bot.before, orientation: v.orientation, lastMove: undefined, check: false });
@@ -488,7 +500,7 @@ function playShow(v) {
 function playStep(v) {
   if (v.phase === "check") return startDrawing(null);
   if (v.phase === "move") {
-    panel.innerHTML = `${barHTML(v.checks, v.budget)}${stepLine(v)}<p class="task">${v.check ? "Шах — защищайся. Твой ход." : "Твой ход."}</p>`;
+    panel.innerHTML = head(v) + turnHTML(v.check ? "Шах! Твой ход" : "Твой ход");
     return playMove(v);
   }
   if (v.phase === "next") return seriesEnd(v, null);
@@ -522,26 +534,29 @@ async function check() {
   $("#check").disabled = true;
   let v;
   try { v = await api("/api/play/answer", { play: S.sid, arrows, ms: took }); }
-  catch (e) { S.phase = "draw"; $("#check").disabled = false; $("#task").textContent = `Не получилось проверить: ${e.message}`; return; }
+  catch (e) { S.phase = "draw"; $("#check").disabled = false; $("#task .tt").textContent = `Не получилось: ${e.message}`; return; }
   S.v = v;
+  S.marks = [...(S.marks || []), !!v.result.ok];
   const r = { result: v.result, threats: v.threats };
   if (v.phase === "move") {
-    showReview(r, took, { bar: barHTML(v.checks - 1, v.budget), bottom: `<p class="task">Твой ход — сделай его на доске.</p>` });
+    showReview(r, took, { bar: head(v, false), bottom: turnHTML("Твой ход") });
     return playMove(v);
   }
-  seriesEnd(v, () => showReview(r, took, { bar: barHTML(v.checks - 1, v.budget), bottom: "" }));
+  seriesEnd(v, () => showReview(r, took, { bar: head(v, false), bottom: "" }));
 }
 // the end of a series: the review (if any), one line about the level, and «Дальше» / «Итог»
 function seriesEnd(v, review) {
   S.phase = "review";
   if (review) review();
-  else panel.innerHTML = barHTML(v.checks - 1, v.budget);
+  else panel.innerHTML = head(v, false);
   const e = v.series_end;
-  if (e && e.length > 1 || (e && e.next_level !== e.level_was)) {
+  if (e && (e.length > 1 || e.next_level !== e.level_was)) {
     const up = e.next_level > e.level_was, down = e.next_level < e.level_was;
-    const text = e.clean ? `Серия без промахов → теперь ${e.next_level} ${plural(e.next_level, "ход", "хода", "ходов")}`
-      : down ? `Серия с промахами → длина ${e.next_level}` : `Серия с промахами — длина та же: ${e.next_level}`;
-    panel.insertAdjacentHTML("beforeend", `<p class="series-line ${up ? "up" : down ? "down" : ""}">${e.game_over ? "Партия окончена. " : ""}${text}</p>`);
+    const n = e.next_level, word = plural(n, "ход", "хода", "ходов");
+    const title = e.clean ? "Серия пройдена!" : e.game_over ? "Партия окончена" : "Серия с промахом";
+    const sub = up ? `Дальше — ${n} ${word}` : down ? `Дальше — ${n} ${word}` : `Ещё раз ${n} ${word}`;
+    panel.insertAdjacentHTML("beforeend", `<div class="series-end ${e.clean ? "up" : down ? "down" : "same"}">
+      <span class="lvl">${up ? "▲" : down ? "▼" : "↻"} ${n}</span><span><b>${title}</b><span>${sub}</span></span></div>`);
   }
   panel.insertAdjacentHTML("beforeend", `<button class="btn primary big" id="next">${v.last ? "Итог" : "Дальше"}</button>`);
   $("#next").addEventListener("click", nextSeries);
@@ -575,11 +590,11 @@ function showReview(r, took, opt = {}) {
   cg.setShapes(userShapes);
   cg.setAutoShapes(auto);
   const n = r.threats.length;
-  let head;
-  if (!n) head = res.ok ? "✓ Угроз нет — верно" : "✗ Здесь угроз не было";
-  else if (res.ok) head = n === 1 ? "✓ Верно" : `✓ Верно, все ${n}`;
-  else if (!res.missed.length) head = "✗ Лишняя стрелка";
-  else head = `✗ Пропущено ${res.missed.length} из ${n}`;
+  let verdict;
+  if (!n) verdict = res.ok ? "Верно, угроз нет" : "Угроз не было";
+  else if (res.ok) verdict = n === 1 ? "Верно!" : `Верно, все ${n}!`;
+  else if (!res.missed.length) verdict = "Лишняя стрелка";
+  else verdict = `Пропущено ${res.missed.length} из ${n}`;
   const items = [];
   // one row per item: the mark in its own column, the text (and the exchange in small print) next to it
   const row = (cls, mark, text, detail) =>
@@ -589,7 +604,7 @@ function showReview(r, took, opt = {}) {
   const last = S.index + 1 >= S.size;
   panel.innerHTML = `
     ${opt.bar ?? barHTML(S.index + 1, S.size)}
-    <div class="verdict ${res.ok ? "ok" : "fail"}">${head}</div>
+    <div class="verdict ${res.ok ? "ok" : "fail"}"><span class="vic">${res.ok ? "✓" : "✕"}</span><span>${verdict}</span></div>
     ${items.length ? `<ul class="items">${items.join("")}</ul>` : ""}
     ${opt.bottom ?? `<button class="btn primary big" id="next">${last ? "Итог" : "Дальше"}</button>`}`;
   const nb = $("#next");
