@@ -164,7 +164,7 @@ function snapToPiece(from, to) {
   const f0 = from.charCodeAt(0), r0 = +from[1], f1 = to.charCodeAt(0), r1 = +to[1];
   const df = Math.sign(f1 - f0), dr = Math.sign(r1 - r0);
   if (!(f0 === f1 || r0 === r1 || Math.abs(f1 - f0) === Math.abs(r1 - r0))) return to; // not along a line
-  const me = S.pos?.orientation;
+  const me = S.v?.orientation;
   for (let f = f0 + df, r = r0 + dr; f !== f1 || r !== r1; f += df, r += dr) {
     const k = String.fromCharCode(f) + r;
     const p = cg.state.pieces.get(k);
@@ -349,15 +349,14 @@ const RULES = `
     <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле. И на поле мата в один ход. Нет угроз — «Угроз нет».</p>
     <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — «Отменить», Backspace или та же стрелка ещё раз.</p>
     <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
-    <p>Серия — партия с ботом уровня 1300: после каждого его хода отмечаешь угрозы, потом ходишь сам. Без промахов — следующая серия на ход длиннее.</p>
+    <p>Серия: соперник ходит — отмечаешь угрозы — ходишь сам — отвечает бот уровня 1300 — снова отмечаешь… Серия без промахов делает следующую на ход длиннее, две серии с промахами подряд — на ход короче. Длина 1 — одна позиция.</p>
   </details>`;
 
 async function showStart() {
   S.phase = "start";
-  S.mode = "drill";
-  S.sv = null;
+  S.v = null;
   S.sid = null;
-  S.pos = null;
+
   arrows = [];
   setPick(null);
   S.reviewShapes = null;
@@ -372,10 +371,9 @@ async function showStart() {
     <div class="chart" id="ch-rating"></div>
     <div class="chart" id="ch-time"></div>
     <button class="btn primary big" id="go" disabled>Начать</button>
-    <button class="btn big" id="series" disabled>Серия против бота</button>
+    <p class="muted center" id="level"></p>
     ${RULES}`;
-  $("#go").addEventListener("click", startSession);
-  $("#series").addEventListener("click", startSeries);
+  $("#go").addEventListener("click", startPlay);
   drawCharts();
   await refreshState();
 }
@@ -391,19 +389,33 @@ async function refreshState() {
   if (S.phase === "start" && go) {
     go.disabled = !st.ready;
     go.textContent = st.ready ? "Начать" : "Готовлю позиции…";
-    const sb = $("#series");
-    if (sb && st.series) {
-      sb.disabled = false;
-      const n = st.series.length;
-      sb.textContent = `Серия против бота · ${n} ${plural(n, "ход", "хода", "ходов")}${st.series.best ? ` · рекорд ${st.series.best}` : ""}`;
-    }
+    const lv = $("#level");
+    if (lv) lv.textContent = `Длина серии: ${st.level} ${plural(st.level, "ход", "хода", "ходов")}${st.best ? ` · рекорд ${st.best}` : ""}`;
   }
   if (imp.running) stateTimer = setTimeout(refreshState, 3000);
 }
 
-async function startSession() {
-  $("#go").disabled = true;
-  try { showPosition(await api("/api/session", {})); } catch (e) { $("#go").textContent = e.message; $("#go").disabled = false; }
+// ---------- the training: series of checks (vision/play.py) ----------
+// A sitting is about 15 checks, made of series; a series is a fragment of a game: the opponent's move, your check,
+// your move, the bot's move, your check… as many checks as your level (1 = one position, one move).
+// the progress row: bar, «3/15», and ✕ — back to the start screen (the session ends with what was answered)
+const barHTML = (done, size) => `
+  <div class="bar"><div class="prog"><i style="width:${(done / size) * 100}%"></i></div><span class="count">${Math.min(done + 1, size)}/${size}</span>
+  <button class="ibtn" id="leave" aria-label="На главный экран" title="На главный экран (Esc дважды)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
+async function leaveSession(how = "button") {
+  if (!S.sid || S.phase === "start" || S.phase === "summary") return showStart();
+  const sid = S.sid;
+  log("leave_click", { how, phase: S.phase, ms: ms(), arrows: arrows.length });
+  S.phase = "start";
+  try { await api("/api/play/leave", { play: sid }); } catch {}
+  showStart();
+}
+panel.addEventListener("click", (e) => { if (e.target.closest("#leave")) leaveSession("button"); });
+document.querySelector(".title").addEventListener("click", () => leaveSession("title"));
+
+function updateCheckButton() {
+  const b = $("#check");
+  if (b && S.phase === "draw") b.textContent = arrows.length ? `Проверить (${arrows.length})` : "Угроз нет";
 }
 
 // the panel of a check: the question, the arrows drawn so far, «Отменить», and «Угроз нет» / «Проверить»
@@ -431,47 +443,75 @@ function startDrawing(item) {
   log("move_shown", { item });
 }
 
-function showPosition(p) {
-  if (p.done) return showSummary(p.summary);
-  Object.assign(S, { mode: "drill", sid: p.session, index: p.index, size: p.size, pos: p, phase: "wait", shownAt: 0, reviewShapes: null });
+function lockBoard() {
+  cg.set({ movable: { color: undefined, dests: new Map() }, draggable: { enabled: false }, selectable: { enabled: false } });
+}
+// «серия 2 · ход 1 из 3» over the question — small, only when the series is longer than one check
+const stepLine = (v) => (v.series.length > 1 ? `<p class="step-line">ход ${Math.min(v.series.checks + 1, v.series.length)} из ${v.series.length}</p>` : "");
+
+async function startPlay() {
+  const b = $("#go");
+  if (b) b.disabled = true;
+  let v;
+  try { v = await api("/api/play/start", {}); } catch (e) { if (b) { b.disabled = false; b.textContent = e.message; } return; }
+  Object.assign(S, { sid: v.play, reviewShapes: null });
+  playShow(v);
+}
+
+// a new series or the bot's answer: the move is shown, then the next step
+function playShow(v) {
+  S.v = v;
+  S.index = v.checks;
+  S.size = v.budget;
+  lockBoard();
   arrows = [];
   setPick(null);
+  S.reviewShapes = null;
   wrap.classList.remove("locked");
   cg.setShapes([]);
   cg.setAutoShapes([]);
-  cg.set({ animation: { enabled: false } });
-  cg.set({ fen: p.fen, orientation: p.orientation, turnColor: p.orientation === "white" ? "black" : "white", lastMove: undefined, check: false });
-  cg.set({ animation: { enabled: true, duration: 250 } });
-  drawPanel(barHTML(p.index, p.size), "Соперник ходит…");
+  if (!v.bot) return playStep(v);
+  S.phase = "wait";
+  drawPanel(barHTML(v.checks, v.budget) + stepLine(v), v.new_series ? "Соперник ходит…" : "Бот ходит…");
+  if (v.new_series) {
+    cg.set({ animation: { enabled: false } });
+    cg.set({ fen: v.bot.before, orientation: v.orientation, lastMove: undefined, check: false });
+    cg.set({ animation: { enabled: true, duration: 250 } });
+  } else cg.set({ fen: v.bot.before });
   setTimeout(() => {
-    if (S.pos !== p || S.phase !== "wait") return; // left for the start screen meanwhile
-    cg.set({ fen: p.after, lastMove: [p.move.slice(0, 2), p.move.slice(2, 4)], turnColor: p.orientation });
-    play(p.capture ? "Capture" : "Move");
-    setTimeout(() => {
-      if (S.pos !== p || S.phase !== "wait") return;
-      startDrawing(p.item);
-    }, 280);
-  }, 450);
+    if (S.v !== v) return;
+    cg.set({ fen: v.fen, lastMove: [v.bot.move.slice(0, 2), v.bot.move.slice(2, 4)], turnColor: v.orientation, check: !!v.check });
+    play(v.bot.capture ? "Capture" : "Move");
+    setTimeout(() => { if (S.v === v) playStep(v); }, 280);
+  }, v.new_series ? 450 : 400);
 }
-
-// the progress row: bar, «3/15», and ✕ — back to the start screen (the session ends with what was answered)
-const barHTML = (done, size) => `
-  <div class="bar"><div class="prog"><i style="width:${(done / size) * 100}%"></i></div><span class="count">${Math.min(done + 1, size)}/${size}</span>
-  <button class="ibtn" id="leave" aria-label="На главный экран" title="На главный экран (Esc дважды)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
-async function leaveSession(how = "button") {
-  if (!S.sid || S.phase === "start" || S.phase === "summary") return showStart();
-  const sid = S.sid;
-  log("leave_click", { how, phase: S.phase, ms: ms(), arrows: arrows.length });
-  S.phase = "start";
-  try { await api(S.mode === "series" ? "/api/series/leave" : "/api/leave", S.mode === "series" ? { series: sid } : { session: sid }); } catch {}
-  showStart();
+function playStep(v) {
+  if (v.phase === "check") return startDrawing(null);
+  if (v.phase === "move") {
+    panel.innerHTML = `${barHTML(v.checks, v.budget)}${stepLine(v)}<p class="task">${v.check ? "Шах — защищайся. Твой ход." : "Твой ход."}</p>`;
+    return playMove(v);
+  }
+  if (v.phase === "next") return seriesEnd(v, null);
 }
-panel.addEventListener("click", (e) => { if (e.target.closest("#leave")) leaveSession("button"); });
-document.querySelector(".title").addEventListener("click", () => leaveSession("title"));
-
-function updateCheckButton() {
-  const b = $("#check");
-  if (b && S.phase === "draw") b.textContent = arrows.length ? `Проверить (${arrows.length})` : "Угроз нет";
+function playMove(v) {
+  S.phase = "move";
+  S.moveAt = performance.now();
+  cg.set({
+    turnColor: v.orientation,
+    movable: { color: v.orientation, free: false, dests: new Map(Object.entries(v.dests || {})), showDests: true, events: { after: onUserMove } },
+    draggable: { enabled: true }, selectable: { enabled: true },
+  });
+}
+async function onUserMove(orig, dest) {
+  if (S.phase !== "move") return;
+  const took = Math.round(performance.now() - S.moveAt);
+  S.phase = "wait";
+  lockBoard();
+  let v;
+  try { v = await api("/api/play/move", { play: S.sid, uci: orig + dest, ms: took }); }
+  catch (e) { cg.set({ fen: S.v.fen }); playMove(S.v); return; }
+  if (v.phase === "next" && !v.bot) return seriesEnd(v, null); // the game ended on your move
+  playShow(v);
 }
 
 async function check() {
@@ -480,11 +520,41 @@ async function check() {
   const took = ms();
   setPick(null);
   $("#check").disabled = true;
-  if (S.mode === "series") return seriesAnswer(took);
-  let r;
-  try { r = await api("/api/answer", { session: S.sid, index: S.index, arrows, ms: took }); }
+  let v;
+  try { v = await api("/api/play/answer", { play: S.sid, arrows, ms: took }); }
   catch (e) { S.phase = "draw"; $("#check").disabled = false; $("#task").textContent = `Не получилось проверить: ${e.message}`; return; }
-  showReview(r, took);
+  S.v = v;
+  const r = { result: v.result, threats: v.threats };
+  if (v.phase === "move") {
+    showReview(r, took, { bar: barHTML(v.checks - 1, v.budget), bottom: `<p class="task">Твой ход — сделай его на доске.</p>` });
+    return playMove(v);
+  }
+  seriesEnd(v, () => showReview(r, took, { bar: barHTML(v.checks - 1, v.budget), bottom: "" }));
+}
+// the end of a series: the review (if any), one line about the level, and «Дальше» / «Итог»
+function seriesEnd(v, review) {
+  S.phase = "review";
+  if (review) review();
+  else panel.innerHTML = barHTML(v.checks - 1, v.budget);
+  const e = v.series_end;
+  if (e && e.length > 1 || (e && e.next_level !== e.level_was)) {
+    const up = e.next_level > e.level_was, down = e.next_level < e.level_was;
+    const text = e.clean ? `Серия без промахов → теперь ${e.next_level} ${plural(e.next_level, "ход", "хода", "ходов")}`
+      : down ? `Серия с промахами → длина ${e.next_level}` : `Серия с промахами — длина та же: ${e.next_level}`;
+    panel.insertAdjacentHTML("beforeend", `<p class="series-line ${up ? "up" : down ? "down" : ""}">${e.game_over ? "Партия окончена. " : ""}${text}</p>`);
+  }
+  panel.insertAdjacentHTML("beforeend", `<button class="btn primary big" id="next">${v.last ? "Итог" : "Дальше"}</button>`);
+  $("#next").addEventListener("click", nextSeries);
+  $("#next").focus();
+}
+async function nextSeries() {
+  if (S.phase !== "review") return;
+  log("next_click", { ms: ms() });
+  $("#next").disabled = true;
+  let v;
+  try { v = await api("/api/play/next", { play: S.sid }); } catch (e) { $("#next").disabled = false; return; }
+  if (v.phase === "over") return showSummary(v.summary);
+  playShow(v);
 }
 
 function showReview(r, took, opt = {}) {
@@ -526,129 +596,23 @@ function showReview(r, took, opt = {}) {
   if (nb) { nb.addEventListener("click", opt.onNext || next); nb.focus(); }
 }
 
-async function next() {
-  if (S.phase !== "review") return;
-  log("next_click", { ms: ms() });
-  $("#next").disabled = true;
-  try { showPosition(await api("/api/next", { session: S.sid })); } catch (e) { $("#next").disabled = false; panel.insertAdjacentHTML("beforeend", `<p class="hint">${esc(e.message)}</p>`); }
-}
-
 async function showSummary(s) {
   S.phase = "summary";
   S.reviewShapes = null;
+  lockBoard();
   wrap.classList.add("locked");
   cg.setShapes([]);
   cg.setAutoShapes([]);
   await loadProgress();
-  const sc = s.score || {};
   panel.innerHTML = `
     ${heroHTML("за эту сессию")}
-    <p class="muted">Верно ${(sc.threat_ok ?? 0) + (sc.quiet_ok ?? 0)} из ${sc.n ?? s.positions} · ${Math.round((s.median_ms || 0) / 1000)} с на позицию</p>
+    <p class="muted">Верно ${s.ok} из ${s.checks} · серий без промахов ${s.clean} из ${s.series} · длина серии ${s.level}</p>
     <div class="chart" id="ch-rating"></div>
     <div class="chart" id="ch-time"></div>
-    <button class="btn primary big" id="again">Ещё сессия</button>
+    <button class="btn primary big" id="again">Ещё</button>
     <button class="btn quiet" id="home">На главный</button>`;
   drawCharts();
-  $("#again").addEventListener("click", async () => { $("#again").disabled = true; try { showPosition(await api("/api/session", {})); } catch (e) { $("#again").disabled = false; $("#again").textContent = e.message; } });
-  $("#home").addEventListener("click", showStart);
-  $("#again").focus();
-}
-
-// ---------- a series against the bot (vision/series.py) ----------
-function lockBoard() {
-  cg.set({ movable: { color: undefined, dests: new Map() }, draggable: { enabled: false }, selectable: { enabled: false } });
-}
-async function startSeries() {
-  const b = $("#series");
-  if (b) b.disabled = true;
-  let v;
-  try { v = await api("/api/series/start", {}); } catch (e) { if (b) { b.disabled = false; b.textContent = e.message; } return; }
-  Object.assign(S, { mode: "series", sid: v.series, index: 0, size: v.length, pos: null, reviewShapes: null });
-  arrows = [];
-  setPick(null);
-  wrap.classList.remove("locked");
-  cg.setShapes([]);
-  cg.setAutoShapes([]);
-  cg.set({ animation: { enabled: false } });
-  cg.set({ fen: v.bot ? v.bot.before : v.fen, orientation: v.orientation, lastMove: undefined, check: false });
-  cg.set({ animation: { enabled: true, duration: 250 } });
-  seriesShow(v);
-}
-// after the start or the user's move: show the bot's move (if any), then the next step
-function seriesShow(v) {
-  S.sv = v;
-  S.index = v.checks;
-  S.size = v.length;
-  lockBoard();
-  if (!v.bot) return seriesStep(v);
-  S.phase = "wait";
-  arrows = [];
-  drawPanel(barHTML(v.checks, v.length), "Бот ходит…");
-  cg.set({ fen: v.bot.before });
-  setTimeout(() => {
-    if (S.sv !== v) return;
-    cg.set({ fen: v.fen, lastMove: [v.bot.move.slice(0, 2), v.bot.move.slice(2, 4)], turnColor: v.orientation, check: !!v.check });
-    play(v.bot.capture ? "Capture" : "Move");
-    setTimeout(() => { if (S.sv === v) seriesStep(v); }, 280);
-  }, 400);
-}
-function seriesStep(v) {
-  if (v.phase === "check") return startDrawing(null);
-  if (v.phase === "move") {
-    panel.innerHTML = `${barHTML(v.checks, v.length)}<p class="task">${v.check ? "Шах — защищайся. Твой ход." : "Твой ход."}</p>`;
-    return seriesMove(v);
-  }
-  if (v.phase === "over") return seriesSummary(v.summary);
-}
-function seriesMove(v) {
-  S.phase = "move";
-  S.moveAt = performance.now();
-  cg.set({
-    turnColor: v.orientation,
-    movable: { color: v.orientation, free: false, dests: new Map(Object.entries(v.dests || {})), showDests: true, events: { after: onSeriesMove } },
-    draggable: { enabled: true }, selectable: { enabled: true },
-  });
-}
-async function onSeriesMove(orig, dest) {
-  if (S.phase !== "move") return;
-  const took = Math.round(performance.now() - S.moveAt);
-  S.phase = "wait";
-  lockBoard();
-  S.reviewShapes = null;
-  cg.setShapes([]);
-  cg.setAutoShapes([]);
-  let v;
-  try { v = await api("/api/series/move", { series: S.sid, uci: orig + dest, ms: took }); }
-  catch (e) { cg.set({ fen: S.sv.fen }); seriesMove(S.sv); $("#task") && ($("#task").textContent = `Ход не принят: ${e.message}`); return; }
-  seriesShow(v);
-}
-async function seriesAnswer(took) {
-  let v;
-  try { v = await api("/api/series/answer", { series: S.sid, arrows, ms: took }); }
-  catch (e) { S.phase = "draw"; $("#check").disabled = false; $("#task").textContent = `Не получилось проверить: ${e.message}`; return; }
-  S.sv = v;
-  const over = v.phase === "over";
-  showReview({ result: v.result, threats: v.threats }, took, {
-    bar: barHTML(v.checks, v.length),
-    bottom: over ? `<button class="btn primary big" id="next">Итог серии</button>` : `<p class="task">Твой ход — сделай его на доске.</p>`,
-    onNext: () => seriesSummary(v.summary),
-  });
-  if (!over) seriesMove(v);
-}
-async function seriesSummary(s) {
-  S.phase = "summary";
-  lockBoard();
-  await loadProgress();
-  const verdict = s.clean ? `✓ Без промахов — дальше ${s.next} ${plural(s.next, "ход", "хода", "ходов")}` : `✗ Промахов: ${s.misses} — снова ${s.next} ${plural(s.next, "ход", "хода", "ходов")}`;
-  panel.innerHTML = `
-    ${heroHTML("за серию")}
-    <div class="verdict ${s.clean ? "ok" : "fail"}">${verdict}</div>
-    <p class="muted">Проверок ${s.checks} из ${s.length}${s.game_over ? ` · партия окончена ${s.result}` : ""} · рекорд ${s.best}</p>
-    <div class="chart" id="ch-rating"></div>
-    <button class="btn primary big" id="again">Ещё серия</button>
-    <button class="btn quiet" id="home">На главный</button>`;
-  drawCharts();
-  $("#again").addEventListener("click", startSeries);
+  $("#again").addEventListener("click", async () => { $("#again").disabled = true; await startPlay(); });
   $("#home").addEventListener("click", showStart);
   $("#again").focus();
 }

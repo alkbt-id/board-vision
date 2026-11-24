@@ -39,6 +39,8 @@ def line(e: dict) -> str | None:
         case "import_error" | "error" | "error_js":
             return f"{t} ⚠ {e.get('text') or e.get('message') or e}"
         case "session_start":
+            if "level" in e:
+                return f"{t} ━━ сессия {e.get('session')} · ~{e.get('size')} проверок · длина серии {e.get('level')}"
             return f"{t} ━━ сессия {e.get('session')} · {e.get('size')} позиций · с угрозой {e.get('threat_items')}"
         case "item_shown":
             motif = f" ({MOTIF_NAME.get(str(e['motif']), e['motif'])})" if e.get("motif") else ""
@@ -87,7 +89,12 @@ def line(e: dict) -> str | None:
                     f"{e.get('items_changed')}), ответов перепроверено {e.get('answers')}: стали верными "
                     f"{e.get('now_right')}, стали неверными {e.get('now_wrong')}")
         case "series_start":
-            return f"{t} ━━ серия {e.get('series')} · {e.get('length')} ходов бота · старт: {SOURCE.get(str(e.get('source')), 'начальная позиция')} · ты {'белыми' if e.get('user') == 'white' else 'чёрными'}"
+            src = str(e.get("source"))
+            motif = f" ({MOTIF_NAME.get(str(e['motif']), e['motif'])})" if e.get("motif") else ""
+            rep = " · повтор" if e.get("repeat") else ""
+            n = e.get("length", 1)
+            return (f"{t} ── серия {e.get('no')}: {n} {'ход' if n == 1 else 'хода' if n < 5 else 'ходов'} · "
+                    f"{SOURCE.get(src, src)}{rep} · угроз {e.get('threats')}{motif}")
         case "bot_move":
             return f"{t}   бот: {e.get('san')}"
         case "user_move":
@@ -95,13 +102,17 @@ def line(e: dict) -> str | None:
         case "series_end":
             s = e.get("summary") or {}
             res = "без промахов" if s.get("clean") else f"промахов {s.get('misses')}"
-            return f"{t} ━━ серия: проверок {s.get('checks')}/{s.get('length')}, {res} → следующая {s.get('next')} ходов"
+            over = " · партия окончена" if s.get("game_over") else ""
+            return f"{t}   серия: {s.get('checks')}/{s.get('length')}, {res}{over} → длина {s.get('next_level')}"
         case "session_exit":
             return f"{t} ━━ вышел на главный экран на позиции {e.get('index', 0) + 1}/{e.get('size')} (отвечено {e.get('answered')})"
         case "leave_click":
             return None
         case "session_end":
             s = e.get("summary") or {}
+            if "series" in s:
+                return (f"{t} ━━ итог: верно {s.get('ok')} из {s.get('checks')}, серий без промахов {s.get('clean')} из "
+                        f"{s.get('series')}, длина серии {s.get('level')}, в среднем {sec(s.get('median_ms'))}")
             if not s.get("positions"):
                 return f"{t} ━━ итог: ни одной позиции не отвечено"
             part = "" if s.get("complete", True) else f" (из {s.get('positions')} отвеченных)"

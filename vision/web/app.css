@@ -191,3 +191,8 @@ details.rules p { margin: 8px 0 0; }
 .items li.extra { color: var(--muted); }
 .items small { font-size: 12.5px; color: var(--muted); font-weight: 400; }
 @media (any-pointer: coarse) { .ibtn { width: 44px; height: 44px; } }
+.step-line { font-size: 13px; color: var(--muted); margin: -6px 0 0; }
+.series-line { font-size: 15px; font-weight: 600; color: var(--muted); }
+.series-line.up { color: var(--good); }
+.series-line.down { color: var(--bad); }
+.center { text-align: center; }
