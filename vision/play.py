@@ -5,8 +5,9 @@ A sitting goes on series after series until the user leaves (✕): no count of c
 a series of length L is a fragment of a game with L turns:
   1. a position from the pool (vision/sources: the user's games, other people's, Lichess puzzles turned around, or
      a position due for a repeat) and the opponent's real move in it — the first check;
-  A series with moves (L > 1) starts only where the user's side is not lost with best play (Stockfish, NOT_LOST)
-  and ends early when a bot move leaves it lost (LOST): traps and hard positions yes, lost ones no.
+  A series with moves (L > 1) starts only where the user's side is not lost with best play (Stockfish, NOT_LOST):
+  traps and hard positions yes, lost ones no. Once started it is played to its length even when it becomes lost —
+  only the marks count, not the game (the user, 2026-11-24: «это же не тренажёр счёта»); a mate ends it.
   2. if L > 1: the user draws his move as an arrow and, before it is played, the arrows of what the opponent can
      do after it («проверь свой ход»: what he can win at once by the capture rule, vision/threats.own_move, and a
      tactical reply Stockfish finds when the move loses material to it, vision/engine.py); «Хожу» checks that, plays the move, and the bot (Maia 1300, vision/bot.py)
@@ -33,7 +34,6 @@ CHECKS = 15
 REPEAT_SHARE = 0.3
 MAX_LEVEL = 30
 NOT_LOST = -300  # a series (level 2+) starts only where your side, playing best, is not worse than this (cp)
-LOST = -500  # after the bot's move: your side is lost even with best play -> the series ends there
 TRIES = 8  # start positions tried before falling back to a single check
 PLAYS: dict[str, dict] = {}
 
@@ -153,15 +153,8 @@ def _bot_turn(p: dict) -> dict:
     p["item"] = None
     events.log("bot_move", series=p["id"], san=san, uci=mv.uci(), ms=int((time.time() - t0) * 1000), fen=before.fen())
     shown: dict = {"bot": {"before": before.fen(), "move": mv.uci(), "san": san, "capture": capture}}
-    lost = False
-    if not board.is_game_over():
-        e = engine.evaluate(board, board.turn)
-        lost = e is not None and e <= LOST
     if board.is_game_over():
         shown["series_end"] = _end_series(p, game_over=True)
-        p["phase"] = "next"
-    elif lost:  # no point playing on: the series ends here
-        shown["series_end"] = _end_series(p, lost=True)
         p["phase"] = "next"
     elif board.is_check():
         p["phase"] = "plan"  # answer the check (no threat check here: the check is the threat)
