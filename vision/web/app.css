@@ -57,8 +57,7 @@ button { font: inherit; color: inherit; }
 .app { width: 100vw; height: 100vh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
 
 /* ---------- header (iPad: below the frosted status band, as in «Шахматный тренер») ---------- */
-/* just clear of the iPad's status bar: the extra room «Шахматный тренер» needs is not needed here (the user, 2026-11-24:
-   «на айпаде сделай шапку меньше») */
+/* just clear of the iPad's status bar: the extra room «Шахматный тренер» needs is not needed here */
 .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(4px + env(safe-area-inset-top, 0px)) 16px 4px; border-bottom: 1px solid var(--line); background: var(--surface); min-height: 40px; }
 .title { font: 600 15px/1.2 var(--font-display); }
 .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
@@ -195,7 +194,7 @@ details.rules p { margin: 8px 0 0; }
 .board-mode.fail { background: #b23b2a; color: #fff; }
 .bm-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bm-text .lvl { display: inline-block; margin-left: 8px; padding: 3px 8px; border-radius: 6px; background: rgba(0, 0, 0, .22); font-size: 16px; vertical-align: 2px; }
-/* the button: white with the word and › in the strip's colour, as on the review (the user, 2026-11-24: «вот такую кнопку хочу») */
+/* the button: white with the word and › in the strip's colour, as on the review */
 .bm-btn { flex: none; height: 44px; min-width: 104px; padding: 0 12px 0 18px; border: 0; border-radius: 6px; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   font: 700 17px/1 var(--font-display); background: #fff; color: #1a56a8; }
@@ -279,13 +278,9 @@ details.rules p { margin: 8px 0 0; }
 .app.side-below #ch-time { grid-column: 2; grid-row: 3 / span 2; }
 
 /* ---------- the frame around the board, as on a real board: the frame in the dark square's colour, a thin line of the
-   light square's colour between it and the squares, the coordinates in the middle of the frame on all sides
-   (the user, 2026-11-24: «как на реальной доске», «внешняя рамка цветом белого поля. граница между полями и рамкой
-   цветом черного поля», «номера и буквы выровняй по середине внешней рамки», then «наоборот рамка черным полем,
-   граница белым») */
+   light square's colour between it and the squares, the coordinates in the middle of the frame on all sides */
 .board-wrap { padding: var(--frame, 20px); background: #a87b56; }
-/* both squares a little darker than Lichess's brown (#f0d9b5 / #b58863) — the user, 2026-11-24: «темное поле сделай чуть
-   темнее», «и светлое чуть темнее тоже» */
+/* both squares a little darker than Lichess's brown (#f0d9b5 / #b58863) */
 cg-board { background-color: #e6cda6; background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4IDgiIHNoYXBlLXJlbmRlcmluZz0iY3Jpc3BFZGdlcyI+PHJlY3Qgd2lkdGg9IjgiIGhlaWdodD0iOCIgZmlsbD0iI2U2Y2RhNiIvPjxyZWN0IHg9IjEiIHk9IjAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSIzIiB5PSIwIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PHJlY3QgeD0iNSIgeT0iMCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4N2I1NiIvPjxyZWN0IHg9IjciIHk9IjAiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSIwIiB5PSIxIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PHJlY3QgeD0iMiIgeT0iMSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4N2I1NiIvPjxyZWN0IHg9IjQiIHk9IjEiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSI2IiB5PSIxIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PHJlY3QgeD0iMSIgeT0iMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4N2I1NiIvPjxyZWN0IHg9IjMiIHk9IjIiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSI1IiB5PSIyIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PHJlY3QgeD0iNyIgeT0iMiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4N2I1NiIvPjxyZWN0IHg9IjAiIHk9IjMiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSIyIiB5PSIzIiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PHJlY3QgeD0iNCIgeT0iMyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4N2I1NiIvPjxyZWN0IHg9IjYiIHk9IjMiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSIxIiB5PSI0IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PHJlY3QgeD0iMyIgeT0iNCIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4N2I1NiIvPjxyZWN0IHg9IjUiIHk9IjQiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSI3IiB5PSI0IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PHJlY3QgeD0iMCIgeT0iNSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4N2I1NiIvPjxyZWN0IHg9IjIiIHk9IjUiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSI0IiB5PSI1IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PHJlY3QgeD0iNiIgeT0iNSIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4N2I1NiIvPjxyZWN0IHg9IjEiIHk9IjYiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSIzIiB5PSI2IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PHJlY3QgeD0iNSIgeT0iNiIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4N2I1NiIvPjxyZWN0IHg9IjciIHk9IjYiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSIwIiB5PSI3IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PHJlY3QgeD0iMiIgeT0iNyIgd2lkdGg9IjEiIGhlaWdodD0iMSIgZmlsbD0iI2E4N2I1NiIvPjxyZWN0IHg9IjQiIHk9IjciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNhODdiNTYiLz48cmVjdCB4PSI2IiB5PSI3IiB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjYTg3YjU2Ii8+PC9zdmc+'); }
 .board-wrap #board { box-shadow: 0 0 0 2px #e6cda6; }
 .fc { position: absolute; display: flex; pointer-events: none; user-select: none; color: #fff8ec;
@@ -301,7 +296,6 @@ cg-board { background-color: #e6cda6; background-image: url('data:image/svg+xml;
 /* the colour of what to do now runs as a thin line on the frame's outer edge, clear of the coordinates */
 .board-wrap.mode-threats::after, .board-wrap.mode-move::after, .board-wrap.mode-chances::after { border-width: 0 3px 3px; }
 
-/* the start screen: no strip over the board, so the board and the panel beside it start and end level
-   (the user, 2026-11-24: «почему так не ровно то!!!!») */
+/* the start screen: no strip over the board, so the board and the panel beside it start and end level */
 .app:not(.playing) .board-mode { display: none; }
 .layout { align-items: start; }

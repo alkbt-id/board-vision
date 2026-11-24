@@ -122,7 +122,7 @@ def meta_set(key: str, value: str) -> None:
 
 def schedule_again(item_id: int) -> None:
     """The position comes back tomorrow and climbs the repeat ladder from the start (a miss after the user's own move
-    in it: the miss is recorded on the move, the repeat is of the position — a side note, 2026-11-24)."""
+    in it: the miss is recorded on the move, the repeat is of the position)."""
     run("INSERT INTO schedule (item, step, due) VALUES (?, 0, ?)"
         " ON CONFLICT(item) DO UPDATE SET step=0, due=excluded.due", (item_id, now_ms() + LADDER[0] * DAY))
 

@@ -101,7 +101,7 @@ def features_own(answer: dict) -> dict[str, float]:
     checks = sum(1 for t in answer.get("threats") or [] if t.get("kind") == "check")
     attacks = answer.get("attacks") or []
     f: dict[str, float] = {"own": 1.0}
-    if checks:  # his checks are hard to see (the user, 2026-11-24: «видеть шахи сложно.. учитывай их в рейтинге»)
+    if checks:  # his checks are hard to see
         f["checks"] = float(min(3, checks))
     if not found and not attacks:
         f["decoys"] = float(min(2, len(answer.get("defended") or [])))

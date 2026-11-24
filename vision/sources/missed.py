@@ -6,7 +6,7 @@ against the player, the player makes some other move, and the opponent then real
 least 2 pawns ahead (or mates). No engine is needed: the game itself shows the threat was real and was missed.
 The drill position is the one the player saw: before the opponent's move, that move, the player to answer. Only a
 moment where the threat could be parried is kept — with best play the player is not lost there (Stockfish,
-play.NOT_LOST): «could have saved it, did not see it» (the user, 2026-11-24: no lost positions).
+play.NOT_LOST): «could have saved it, did not see it».
 """
 
 import io

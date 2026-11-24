@@ -12,8 +12,8 @@ History:
   5  the check of your own move: when your move takes and the exchange there does not lose for you, his taking back
      is not a threat (2026-11-24: Bxh4 gxh4 Qxh4 was marked as «missed»). Own-move positions are checked again too,
      keeping the engine's tactics they carry
-  6  the same taking back is optional: drawn it is right, left out it is no miss (2026-11-24: «на d3 явно стрелки
-     нужны после моего хода взятия пешкой»)
+  6  the same taking back is optional: drawn it is right, left out it is no miss (2026-11-24: after a pawn capture
+     on d3 the arrows of his taking back are wanted, not wrong)
 The engine's tactics (forced mates in 2–3, winning checks: threats.add_tactics) are not the rule's: a position keeps
 the ones it has when its key is computed again, and an answer is checked with them only if it was asked for them
 (its stored result has "tactics": true).
@@ -101,7 +101,7 @@ def run() -> None:
 
 
 def sources_v2() -> None:
-    """Once (2026-11-24, the user: no lost positions): the turned-around Lichess puzzles are set aside (source
+    """Once: the turned-around Lichess puzzles are set aside (source
     «puzzle_old») and read again from the solver's side (vision/sources/puzzles.py); the real misses where the threat
     could not be parried — the player lost with best play — are set aside too («missed_lost»). Set aside, not deleted:
     past answers keep their positions."""
@@ -123,7 +123,7 @@ def sources_v2() -> None:
 
 
 def sources_v3() -> None:
-    """Once (2026-11-24, the user: «а можно мне бредовые позиции не ставить?»): positions from the first 8 moves of
+    """Once: positions from the first 8 moves of
     other people's games (the open database and the real misses) are set aside as «db_early» / «missed_early» — not
     deleted, past answers keep them; new ones are taken from move 9 on (vision/sources/lichess_db.FIRST_PLY)."""
     if store.meta_get("sources_v3") == "1":

@@ -207,8 +207,7 @@ function undoArrow() {
   if (arrows.length) return removeArrow(arrows.length - 1, "undo");
   if (S.phase === "plan" && myMove) rethink();
 }
-// your move taken back: back to step 1 with your circles (the user, 2026-11-24: «баги при отмене - пропадают отметки
-// висящих фигур противника и нельзя вернуться на эту стадию»); a turn that started with no step 1 stays in step 2
+// your move taken back: back to step 1 with your circles; a turn that started with no step 1 stays in step 2
 function rethink() {
   if (S.phase !== "plan") return;
   log("plan_rethink", { ms: ms(), from: myMove?.from, to: myMove?.to });
@@ -358,8 +357,7 @@ function syncMode() {
 }
 bm.btn.addEventListener("click", () => { if (bmAction && !bm.btn.disabled) bmAction(); });
 bm.undo.addEventListener("click", () => undoArrow());
-// the series: a dot a turn — filled when everything of the turn was right (the user, 2026-11-24: «очередность
-// кажется лишней.. теперь фактически я только на своем ходу оцениваю»)
+// the series: a dot a turn — filled when everything of the turn was right
 function dots() {
   const v = S.v;
   if (!S.sid || !v?.series) return { html: "", n: 0, done: 0 };
@@ -396,20 +394,19 @@ function badge(shape, fill, inner) {
   return { ...shape, customSvg: { html: `<g transform="translate(${50 + dx * 50} ${50 + dy * 50})"><circle r="19" fill="${fill}" stroke="#fff" stroke-width="4"/>${inner}</g>` } };
 }
 // a line of moves, numbered: his in red, yours in blue (a capture that only looks fair, a fork with check, a mate)
-// what kind of blow a missed move is, as a sign on its arrow instead of «!» (the user, 2026-11-24: «отмечай как-то
-// отдельно на доске что это шах, вилка и связка», «не надо словом.. давай значками»): + check, # mate, a fork's prongs,
+// what kind of blow a missed move is, as a sign on its arrow instead of «!»: + check, # mate, a fork's prongs,
 // a chain for a pin, an eye for a discovered attack
 const MOTIF_ICON = {
   "шах": '<path d="M0-9.5v19M-9.5 0h19" stroke="#fff" stroke-width="5" stroke-linecap="round"/>',
   "мат": '<path d="M-4-10v20M4-10v20M-10-4h20M-10 4h20" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/>',
-  // a table fork: three tines, the neck, the handle (the user: «развилка (Y) нарисуй вилку )»)
+  // a table fork: three tines, the neck, the handle (not a Y-shaped road fork)
   "вилка": '<path d="M-6-12v6.5M0-12v6.5M6-12v6.5M-6-5.5C-6 0 6 0 6-5.5M0-1.5V12" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>',
   "связка": '<g transform="rotate(-35)" fill="none" stroke="#fff" stroke-width="3.6"><rect x="-12" y="-5" width="14" height="10" rx="5"/><rect x="-2" y="-5" width="14" height="10" rx="5"/></g>',
   "вскрытое": '<path d="M-11.5 0C-6-7.5 6-7.5 11.5 0C6 7.5-6 7.5-11.5 0Z" fill="none" stroke="#fff" stroke-width="3.4"/><circle r="3.6" fill="#fff"/>',
 };
 const motifMark = (shape, motif, fill = "#d13b25") => badge(shape, fill, MOTIF_ICON[motif] || MARK.miss.icon);
 // a line of moves, numbered 1, 2, 3…; the first move also carries the sign of what it is (a fork, a check…) near its
-// head (the user, 2026-11-24, seeing «+, 2, 3»: «опять какой-то бред с цифрами» — the 1 was missing)
+// head
 function lineShapes(line, motif = "") {
   const out = line.map((st, i) => numbered({ orig: st.from, dest: st.to, brush: st.who === "you" ? "paleBlue" : "red" },
     i + 1, st.who === "you" ? "#2a78d6" : "#d13b25"));
@@ -486,8 +483,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 
 // ---------- board size: as big as the window allows ----------
 // The panel beside the board goes where the board stays biggest: on the right of a wide window, under it in a tall
-// one — the moves while you play (the user, 2026-11-24: «в зависимости от ориентации рисуй или справа или снизу»),
-// the rating and the charts on the start screen («тоже надо учитывать пропорции экрана»).
+// one — the moves while you play, the rating and the charts on the start screen.
 const MOVES_H = 132; // the moves under the board: about four lines
 const PANEL_H = 360; // the start screen's panel under the board
 function layout() {
@@ -521,7 +517,7 @@ function layout() {
   wrap.style.setProperty("--coord", `${Math.round(frame * 0.56)}px`);
   renderCoords();
   wrap.style.width = wrap.style.height = `${size}px`;
-  // the start screen's panel beside the board: exactly as tall, top and bottom level (the user: «почему так не ровно»)
+  // the start screen's panel beside the board: exactly as tall, top and bottom level
   if (!playing) $(".side").style.height = below ? "" : `${size}px`;
   $("#board-mode").style.width = `${size}px`;
   const moves = $("#moves");
@@ -868,9 +864,9 @@ function missedArrows(t, mark = false, brush = "red") {
   return list;
 }
 
-// step 1 done («Ничего нет» / «Готово», or your move drawn at once): checked at once, before your move (the user,
-// 2026-11-24: «покажи до хода»). Right: on to your move (the one drawn, if any), your circles stay pale. A mistake:
-// the review first, then «Дальше» — or drawing on the board — starts your move
+// step 1 done («Ничего нет» / «Готово», or your move drawn at once): checked at once, before your move. Right: on to
+// your move (the one drawn, if any), your circles stay pale. A mistake: the review first, then «Дальше» — or drawing on
+// the board — starts your move
 async function check(move = null) {
   if (S.phase !== "draw") return;
   const took = ms(), marks = arrows;

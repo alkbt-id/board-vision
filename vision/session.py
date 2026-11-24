@@ -1,8 +1,7 @@
 """Picking pool positions, and the numbers behind the start screen.
 
-A series starts on a position with a threat in 60% of cases (the user, 2026-11-24: «может пора уже более острые
-добавлять?» — quiet ones were 95% right); of those positions, the one is taken whose difficulty (vision/rating.py)
-is nearest to the user's rating plus a little, so they get sharper as he gets better.
+A series starts on a position with a threat in 60% of cases; of those positions, the one is taken whose difficulty
+(vision/rating.py) is nearest to the user's rating plus a little, so they get sharper as he gets better.
 The training itself (series of checks) is vision/play.py.
 """
 
@@ -103,8 +102,8 @@ def _score(rows: list) -> dict:
 
 
 def progress(limit: int | None = None) -> dict:
-    """The chart: the attention rating after each played-out position — a series (the user, 2026-11-24: «просто
-    пересчитывай после каждой позиции»); answers from before series were stored count per session.
+    """The chart: the attention rating after each played-out position — a series; answers from before series were
+    stored count per session.
     {"start": 1500, "rating": current, "points": [{session, ts, rating, n, median_s}, ...] oldest first}."""
     from . import rating
 
@@ -121,7 +120,7 @@ def progress(limit: int | None = None) -> dict:
         p.pop("min")
         ms = p.pop("ms")
         p["median_s"] = round(statistics.median(ms) / 1000, 1) if ms else None
-    # every point: the trend over weeks is what tells whether the method works (a side note, 2026-11-24)
+    # every point: the trend over weeks is what tells whether the method works
     return {"start": rating.START, "rating": points[-1]["rating"] if points else rating.START,
             "points": points[-limit:] if limit else points}
 

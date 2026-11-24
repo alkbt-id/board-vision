@@ -4,8 +4,7 @@ https://database.lichess.org), both players inside the rating band of config.tom
 Only the beginning of a monthly file is read (a stream, the connection is closed when enough games are taken).
 Each game gives a few random positions after the moves of one side: up to 2 with a threat and up to 3 quiet ones,
 so the pool keeps the real mix of a game — mostly quiet positions. Only from move 9 on (FIRST_PLY): the openings of
-other people's games at this level are often nonsense (the user, 2026-11-24, after 1.a3 2.b3 3.g3 4.h3: «а можно мне
-бредовые позиции не ставить?»); his own games keep their openings.
+other people's games at this level are often nonsense; his own games keep their openings.
 """
 
 import datetime

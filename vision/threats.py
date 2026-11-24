@@ -17,7 +17,7 @@ come out ahead after the whole exchange, his pawn walking in to queen, his mate 
 step with a circle on the opponent's piece (his king for a mate); a mate or a queening on an empty square is found
 by playing it. An arrow from the user's own piece is his move, not a mark.
 
-Tactics (2026-11-24, the user: «шахи считаются угрозой?», «а ходы форсированного мата?»): what only an engine
+Tactics: what only an engine
 sees — a forced mate in 2–3 and a check that wins material (a fork with check) — are added for both sides by
 `add_tactics` (vision/engine.forcing): his to the threats, the user's to the chances. A tactic is found by an arrow
 of its first move (or from the piece to what it hits); a chance tactic by a circle on what it wins (on his king for
@@ -270,11 +270,11 @@ def tactic_items(board: chess.Board, lines: list[dict], known: list[dict], who: 
             b.push(m)
         if not ln["mate"] and new_gain < 2:
             # it only takes what is threatened anyway, with a check on the way (Bxf2+ Qxf2 Qxb7 when the rule has
-            # Qxb7 already): no new item (the user, 2026-11-24: «опять какой-то бред с цифрами»)
+            # Qxb7 already): no new item
             continue
         if not ln["mate"]:
             # a winning check ends where it has won: the engine's quiet moves after the last take are noise on the
-            # board (the user, 2026-11-24, after Rxf1+ Bxf1 axb6 h3: «а это что за бред»)
+            # board
             steps = steps[: last + 1]
         a = board.copy(stack=False)
         a.push(first)
@@ -288,7 +288,7 @@ def tactic_items(board: chess.Board, lines: list[dict], known: list[dict], who: 
                     "tactic": "mate" if ln["mate"] else "check" if board.gives_check(first) else "quiet",
                     "motif": "мат" if ln["mate"] else motif(board, first),
                     # your quiet combination (a fork, a pin found by the engine) is calculation, not attention: right
-                    # when you mark it, no miss when you do not (a side note, 2026-11-24; «это же не тренажёр счёта»)
+                    # when you mark it, no miss when you do not
                     **({"optional": True} if who == "you" and not ln["mate"] and not board.gives_check(first) else {}),
                     "line": steps, "wins": wins})
     return out
@@ -354,7 +354,7 @@ def explain_extra(extra: dict, answer: dict, after: chess.Board) -> dict:
 
 def _battery(items: list[dict], a: str | None, b: str | None) -> dict | None:
     """A threat marked along its battery: an arrow from the piece behind to the one in front (Rf1→f7 when Rf7 takes
-    on f8 with Rf1 behind it), either way round — the user, 2026-11-24, drew Rf1→f7 for Rxf8+ and got ✕."""
+    on f8 with Rf1 behind it), either way round: Rf1→f7 drawn for Rxf8+ is found, not ✕."""
     for frm, to in ((a, b), (b, a)):
         for t in items:
             if to in t["attackers"] and frm in (t.get("xray") or []):
@@ -444,8 +444,8 @@ def own_move(before: chess.Board, move: chess.Move, with_checks: bool = True) ->
     key = opponent_key(b)
     if before.is_capture(move) and not before.is_en_passant(move) and capture_gain(before, move) >= 0:
         # your capture starts an exchange you do not lose: his taking back there is its second half — not a miss when
-        # you leave it out («я взял слоном коня!» after Bxh4 gxh4 Qxh4), right when you draw it («на d3 явно стрелки
-        # нужны после моего хода взятия пешкой», 2026-11-24): an optional item
+        # you leave it out (Bxh4 took a knight, so gxh4 Qxh4 is no threat), right when you draw it (after a pawn
+        # capture on d3 the arrows of his taking back are wanted): an optional item
         to = chess.square_name(move.to_square)
         for t in key["threats"]:
             if t["target"] == to and not t["mate"]:
@@ -457,11 +457,10 @@ def own_move(before: chess.Board, move: chess.Move, with_checks: bool = True) ->
 
 
 def motif(board: chess.Board, move: chess.Move) -> str:
-    """What `move` of the side to move in `board` does, in one word for the board (the user, 2026-11-24: «отмечай
-    как-то отдельно на доске что это шах, вилка и связка»): «мат», «вилка» (the moved piece hits two things at once,
-    the king counting — a piece counts when it is worth more than the attacker or undefended), «связка» (a piece of
-    the other side newly pinned to its king, or standing in front of its queen on the moved piece's line), «шах»,
-    «вскрытое» (another piece of his hits something new: the moved one opened its line), or ""."""
+    """What `move` of the side to move in `board` does, in one word for the board: «мат», «вилка» (the moved piece hits
+    two things at once, the king counting — a piece counts when it is worth more than the attacker or undefended),
+    «связка» (a piece of the other side newly pinned to its king, or standing in front of its queen on the moved piece's
+    line), «шах», «вскрытое» (another piece of his hits something new: the moved one opened its line), or ""."""
     me, them = board.turn, not board.turn
     b = board.copy(stack=False)
     b.push(move)
@@ -502,8 +501,8 @@ def motif(board: chess.Board, move: chess.Move) -> str:
 
 
 def check_items(board: chess.Board, known: list[dict]) -> list[dict]:
-    """Every check the side to move in `board` can give, as an item to mark — the user, 2026-11-24: «на угрозах надо
-    отмечать шахи», every one of them (his checks are the most forcing moves and the easiest to overlook). Found by
+    """Every check the side to move in `board` can give, as an item to mark, every one of them (his checks are the
+    most forcing moves and the easiest to overlook). Found by
     an arrow of the checking move, or from his piece to the king. Left out: a mate (the rule's mate threat has it)
     and a winning capture with check (its capture threat has it)."""
     king = board.king(not board.turn)
@@ -521,8 +520,8 @@ def check_items(board: chess.Board, known: list[dict]) -> list[dict]:
         if b.is_checkmate():
             continue
         # a check that simply loses the checking piece (you take it and come out ahead) is optional: right when you
-        # mark it, no miss when you do not (the user, 2026-11-24: «в ошибку ставятся все вилки, даже если они
-        # суицидальные»); it is a check, not a fork — a fork that wins is the engine's item with its own sign
+        # mark it, no miss when you do not; it is a check, not a fork — a fork that wins is the engine's item with its
+        # own sign
         suicidal = any(capture_gain(b, c) > 0 for c in b.generate_legal_captures(to_mask=chess.BB_SQUARES[move.to_square]))
         out.append({"target": move.uci(), "targets": [to, chess.square_name(king)], "piece": None, "attackers": [fr],
                     "best": move.uci(), "san": board.san(move), "gain": 0, "mate": False, "kind": "check",

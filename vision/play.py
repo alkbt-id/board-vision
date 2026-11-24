@@ -1,13 +1,12 @@
 """The one training mode: series of checks, one game fragment each, getting longer as the user gets them right.
 
-A sitting goes on series after series until the user leaves (✕): no count of checks and no summary (the user,
-2026-11-24: «а нафига нам 15 проверок вообще?», «зачем нам вообще итог? … сразу начинай следующую серию»);
+A sitting goes on series after series until the user leaves (✕): no count of checks and no summary;
 a series of length L is a fragment of a game with L turns:
   1. a position from the pool (vision/sources: the user's games, other people's, Lichess puzzles turned around, or
      a position due for a repeat) and the opponent's real move in it — the first check;
   A series with moves (L > 1) starts only where the user's side is not lost with best play (Stockfish, NOT_LOST):
   traps and hard positions yes, lost ones no. Once started it is played to its length even when it becomes lost —
-  only the marks count, not the game (the user, 2026-11-24: «это же не тренажёр счёта»); a mate ends it.
+  only the marks count, not the game; a mate ends it.
   2. if L > 1: the user draws his move as an arrow and, before it is played, the arrows of what the opponent can
      do after it («проверь свой ход»: what he can win at once by the capture rule, vision/threats.own_move, and a
      tactical reply Stockfish finds when the move loses material to it, vision/engine.py); «Хожу» checks that, plays the move, and the bot (Maia 1300, vision/bot.py)
@@ -98,8 +97,8 @@ def _view(p: dict, extra: dict | None = None) -> dict:
 def _new_series(p: dict) -> dict:
     """The next series. With moves to play (level 2+) it starts only where your side is not lost with best play:
     traps and hard positions yes, positions lost in advance (most turned-around puzzles: the blow has landed) no.
-    A lost start is skipped, whatever its source (the user, 2026-11-24: «а тут опять проигранная позиция? … должны же
-    были все проверить?»); only when TRIES picks in a row are lost does the last one come as a single check."""
+    A lost start is skipped, whatever its source; only when TRIES picks in a row are lost does the last one come as a
+    single check."""
     single = False
     for attempt in range(TRIES):
         it = _pick_start(p)
@@ -204,8 +203,7 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
         mv = chess.Move.from_uci(move[:4])
         if any(m.from_square == mv.from_square and m.to_square == mv.to_square for m in board.legal_moves):
             played = {"from": move[:2], "to": move[2:4]}
-    # his threats now and his pieces you can win — the threats before your move came back (the user, 2026-11-24: «давай
-    # еще вернем возможность отмечать угрозы перед моим ходом, это как то для меня более логично»)
+    # his threats now and his pieces you can win — the threats before your move came back
     result = threats.check(key, arrows, board, played=played)
     chances = key.get("chances") or []
     item_id = p["item"]
@@ -259,7 +257,7 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
     took = threats.VALUE[board.piece_type_at(mv.to_square)] if board.piece_at(mv.to_square) else 0  # what your move takes
     board.push(mv)
     # his checks that win and his forced mates in 2–3 after your move, as the engine sees them — also when your move
-    # is the best there is (a side note, 2026-11-24: an unavoidable fork marked right was counted as extra)
+    # is the best there is
     lines = engine.forcing(board, credit=took, quiet=True)  # what you have just taken is not his to «win» back
     if lines:
         key["threats"] += threats.tactic_items(board, lines, key["threats"], "he")
@@ -283,8 +281,7 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
     sr = p["series"]
     p["checks"] += 1
     sr["own"] += 1
-    sr["checks"] += 1  # a turn done: counted here, so a turn that answers a check (no step 1) counts too (the user,
-    # 2026-11-24: «уже сделал сколько надо ходов, а позиция не заканчивается»)
+    sr["checks"] += 1  # a turn done: counted here, so a turn that answers a check (no step 1) counts too
     sr["misses"] += not result["ok"]
     p["answers"].append({"ok": result["ok"], "threats": needed,
                          "found": len(result["found"]), "extra": len(result["extra"]), "ms": ms, "own": True})

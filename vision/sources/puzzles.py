@@ -2,8 +2,7 @@
 
 A Lichess puzzle row: FEN before the opponent's mistake, Moves = the mistake, then the winning line. The drill
 position is just that: the opponent's mistake is his move, and the user plays the solver — the winning blow is his
-to see in step 1 («Что у него висит?»: a chance), and the position is won, not lost (the user, 2026-11-24: no lost
-positions; the puzzles used to be turned around, the user sitting on the side already hit). Positions where the
+to see in step 1 («Что у него висит?»: a chance), and the position is won, not lost. Positions where the
 solver is in check after the mistake are left out. The puzzle's theme becomes the motif.
 """
 
