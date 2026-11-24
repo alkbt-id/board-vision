@@ -27,7 +27,7 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import bot, config, events, migrate, play, session, sources, store
+from . import bot, config, engine, events, migrate, play, session, sources, store
 
 WEB = Path(__file__).parent / "web"
 REFRESH_EVERY_MS = 12 * 3600 * 1000
@@ -152,6 +152,7 @@ async def lifespan(_app):
     finally:
         sources.STOPPING.set()
         bot.close()
+        engine.close()
         events.log("app_stop")
 
 

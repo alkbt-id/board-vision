@@ -139,14 +139,18 @@ def test_a_pawn_walking_in_to_queen_is_a_threat():
     assert "проходит в ферзи" in res["items"][1]["text"]
 
 
-def test_own_move_that_lets_a_knight_hit_the_queen():
-    # 2026-11-24: the user moved the knight that guarded d5 (Nc3-e4) and the black knight jumped to d5 onto the queen
-    before = chess.Board("r2q2k1/1p3ppp/p2p1n1n/8/5Q2/2N2N2/PP3PPP/4R1K1 w - - 0 1")
-    key = threats.own_move(before, chess.Move.from_uci("c3e4"))
-    assert [m["san"] for a in key["attacks"] for m in a["moves"]] == ["Nd5"]
+def test_own_move_static_part_and_a_reply_item():
+    # 2026-11-24: Qe2xe5 left the knight d4 hanging; the static part of the own-move check finds it
+    before = chess.Board("r2q3r/pp3kpn/2p4p/2b1p3/3N4/2N4P/PPP1QPP1/R1B2RK1 w - - 0 1")
+    key = threats.own_move(before, chess.Move.from_uci("e2e5"))
+    assert [t["target"] for t in key["threats"]] == ["d4"] and key["attacks"] == []
+    assert key["threats"][0]["best"] == "c5d4"  # the red arrow comes from the cheapest piece that wins it
+    # a reply item (what vision/engine.py adds for a tactic): the arrow is the reply, or from it to its target
     after = before.copy()
-    after.push_uci("c3e4")
-    assert threats.check_own(key, [{"from": "f6", "to": "d5"}], after)["ok"]
-    assert not threats.check_own(key, [], after)["ok"]
-    # a quiet move that changes nothing: the attacks he had anyway are not the move's fault
-    assert threats.own_move(before, chess.Move.from_uci("h2h3"))["attacks"] == []
+    after.push_uci("e2e5")
+    item = threats.reply_item(after, chess.Move.from_uci("h8e8"), 300, {"d4"})
+    key["attacks"].append(item)
+    assert "e5" in item["targets"]
+    got = threats.check_own(key, [{"from": "c5", "to": "d4"}, {"from": "h8", "to": "e8"}], after)
+    assert got["ok"]
+    assert "нападение на ферзь e5" in threats.describe_attack(item, after)

@@ -4,8 +4,8 @@ A sitting has about 15 checks. It is made of series; a series of length L is a f
   1. a position from the pool (vision/sources: the user's games, other people's, Lichess puzzles turned around, or
      a position due for a repeat) and the opponent's real move in it — the first check;
   2. if L > 1: the user draws his move as an arrow and, before it is played, the arrows of what the opponent can
-     do after it («проверь свой ход», vision/threats.own_move: what he can win at once, safe forks, attacks on
-     the queen the move made possible); «Хожу» checks that, plays the move, and the bot (Maia 1300, vision/bot.py)
+     do after it («проверь свой ход»: what he can win at once by the capture rule, vision/threats.own_move, and a
+     tactical reply Stockfish finds when the move loses material to it, vision/engine.py); «Хожу» checks that, plays the move, and the bot (Maia 1300, vision/bot.py)
      answers; then check again — until L checks of the bot's moves are done or the game ends.
 L is the user's level (meta series_length, starts at 1): a series without a miss (in either kind of check) makes it
 one longer (max 30), two missed series in a row make it one shorter (min 1). So at level 1 it is the plain «one position, one move» drill.
@@ -23,7 +23,7 @@ import uuid
 
 import chess
 
-from . import bot, events, session, store, threats
+from . import bot, engine, events, session, store, threats
 
 CHECKS = 15
 REPEAT_SHARE = 0.3
@@ -211,8 +211,14 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
             raise ValueError("такого хода нет")
     arrows = [{"from": str(a.get("from")), "to": str(a.get("to"))} for a in arrows[:30] if isinstance(a, dict)]
     key = threats.own_move(board, mv)
+    ref = engine.refutation(board, mv)
     before_fen, san = board.fen(), board.san(mv)
     board.push(mv)
+    if ref:
+        reply, loss = ref
+        taken = {t["target"] for t in key["threats"]}
+        if not (board.is_capture(reply) and chess.square_name(reply.to_square) in taken):
+            key["attacks"].append(threats.reply_item(board, reply, loss, taken))  # a tactic the capture rule does not see
     result = threats.check_own(key, arrows, board)
     side = "w" if p["user"] == chess.WHITE else "b"
     store.add_item("ownmove", before_fen, mv.uci(), side, {**key, "threats": key["threats"]}, ref=pid,
