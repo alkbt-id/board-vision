@@ -22,6 +22,10 @@ describe in «Невидимые шахматные ходы» and what the rese
   mate          the opponent mates
   promotion     a pawn walks in to queen
   decoys        quiet position: pieces of yours that are attacked but safe (they look like threats), up to 2
+The check of your own move («проверь свой ход», vision/play.commit) is scored on the same scale with its own points:
+  own           it is your own move: the position after it has to be imagined (+100)
+  attack        a fork or a new attack on your queen to see, not only a capture (+150)
+  threat, more, mate, exchange   as above, for what he can win at once
 The points start as a guess (WEIGHTS) and are adjusted by the answers themselves, a little after each one: a kind
 of position you miss more often than expected becomes worth more.
 
@@ -39,7 +43,7 @@ K = 24  # rating step
 ETA = 4  # how fast the difficulty points learn
 WEIGHTS = {
     "threat": 300, "more": 100, "discovered": 150, "old": 100, "backward": 100, "horizontal": 75, "long": 50,
-    "knight": 50, "exchange": 150, "mate": 50, "promotion": 100, "decoys": 100,
+    "knight": 50, "exchange": 150, "mate": 50, "promotion": 100, "decoys": 100, "own": 100, "attack": 150,
 }
 
 
@@ -83,6 +87,27 @@ def features(fen: str, move_uci: str, answer: dict) -> dict[str, float]:
     return f
 
 
+def features_own(answer: dict) -> dict[str, float]:
+    """What makes the check of your own move hard (see the module doc)."""
+    found = answer.get("threats") or []
+    attacks = answer.get("attacks") or []
+    f: dict[str, float] = {"own": 1.0}
+    if not found and not attacks:
+        f["decoys"] = float(min(2, len(answer.get("defended") or [])))
+        return f
+    f["threat"] = 1.0
+    f["more"] = float(len(found) + len(attacks) - 1)
+    if attacks:
+        f["attack"] = 1.0
+    for t in found:
+        if t.get("mate"):
+            f["mate"] = 1.0
+        ex = t.get("exchange") or {}
+        if len(ex.get("line") or []) >= 3 or ex.get("if_recapture"):
+            f["exchange"] = 1.0
+    return f
+
+
 def _threat_before(before: chess.Board, square: int) -> bool:
     """Could the opponent already win the piece on `square` before his move (it is his move in `before`)?"""
     for m in before.generate_legal_captures(to_mask=chess.BB_SQUARES[square]):
@@ -108,10 +133,11 @@ def clear_cache() -> None:
     _feature_cache.clear()
 
 
-def _item_features(item_id: int, fen: str, move: str, answer_json: str) -> dict:
+def _item_features(item_id: int, fen: str, move: str, answer_json: str, source: str = "") -> dict:
     if item_id not in _feature_cache:
         import json
-        _feature_cache[item_id] = features(fen, move, json.loads(answer_json))
+        answer = json.loads(answer_json)
+        _feature_cache[item_id] = features_own(answer) if source == "ownmove" else features(fen, move, answer)
     return _feature_cache[item_id]
 
 
@@ -119,14 +145,14 @@ def replay() -> list[dict]:
     """Every first-time answer in order, with the rating after it: [{session, ts, rating, difficulty, score, ms}].
     The difficulty points learn along the way, so the whole history is replayed from the start each time."""
     rows = store.q(
-        "SELECT a.session, a.ts, a.ms, a.n_threats, a.found, a.extra, i.id AS item, i.fen, i.move, i.answer"
+        "SELECT a.session, a.ts, a.ms, a.n_threats, a.found, a.extra, i.id AS item, i.fen, i.move, i.answer, i.source"
         " FROM attempts a JOIN items i ON i.id = a.item"
         " WHERE a.id = (SELECT MIN(b.id) FROM attempts b WHERE b.item = a.item) ORDER BY a.ts")
     w = dict(WEIGHTS)
     rating = float(START)
     out = []
     for r in rows:
-        f = _item_features(r["item"], r["fen"], r["move"], r["answer"])
+        f = _item_features(r["item"], r["fen"], r["move"], r["answer"], r["source"])
         diff = BASE + sum(w.get(k, 0) * v for k, v in f.items())
         e = expected(diff, rating)
         s = score(r["n_threats"] or 0, r["found"] or 0, r["extra"] or 0)

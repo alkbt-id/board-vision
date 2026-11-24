@@ -205,6 +205,7 @@ details.rules p { margin: 8px 0 0; }
 .streak .dot.miss { background: var(--bad); border-color: var(--bad); }
 .streak .dot.now { border-color: var(--accent-bg); box-shadow: 0 0 0 4px var(--accent-soft); }
 .streak .dot.todo { background: var(--surface-2); }
+.streak .dot.own { border-radius: 9px; } /* the check of your own move: a square, his moves: circles */
 /* «Твой ход» / «Что под ударом?» with a square of your colour (Lichess style) */
 .turn { display: flex; align-items: center; gap: 12px; font: 700 22px/1.2 var(--font-body); }
 .turn .who { flex: none; width: 30px; height: 30px; border-radius: 6px; border: 2px solid var(--line); }

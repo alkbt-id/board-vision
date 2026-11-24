@@ -37,6 +37,8 @@ def _taken(board: chess.Board, move: chess.Move) -> int:
 
 def _swap(board: chess.Board, square: int) -> int:
     """The most the side to move wins by recapturing on `square` (0 when stopping is better)."""
+    if board.piece_type_at(square) == chess.KING:
+        return 0
     caps = list(board.generate_legal_captures(to_mask=chess.BB_SQUARES[square]))
     if not caps:
         return 0
@@ -115,9 +117,15 @@ def analyse(after: chess.Board) -> dict | None:
         return None
     board = after.copy(stack=False)
     board.push(chess.Move.null())
+    return opponent_key(board)
+
+
+def opponent_key(board: chess.Board) -> dict:
+    """The answer key with the opponent to move in `board` (what he can win right now): see `analyse`."""
+    after = board
     found: dict[int, dict] = {}
     for move in board.generate_legal_captures():
-        if board.is_en_passant(move):
+        if board.is_en_passant(move) or board.piece_type_at(move.to_square) == chess.KING:
             continue
         gain = capture_gain(board, move)
         t = found.setdefault(move.to_square, {"attackers": set(), "gain": None, "best": None, "mate": False})
@@ -265,3 +273,120 @@ def check(answer: dict, arrows: list[dict], after: chess.Board) -> dict:
               "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in answer["threats"]]
     return {"found": sorted(found), "missed": missed, "extra": extra, "ok": not missed and not extra,
             "items": items, "extras": [explain_extra(x, answer, after) for x in extra]}
+
+
+# ---------- the check of the user's own move («проверь свой ход») ----------
+
+def _landing_safe(board: chess.Board, square: int) -> bool:
+    """The piece that just landed on `square` (the side to move is the other one) cannot be won there."""
+    return all(capture_gain(board, m) <= 0 for m in board.generate_legal_captures(to_mask=chess.BB_SQUARES[square]))
+
+
+def _attacks(b: chess.Board, now: set[str]) -> tuple[dict[str, dict], list[dict]]:
+    """The opponent's (to move in `b`) quiet moves that land safely and attack your queen, or two of your pieces at
+    once (a check counts as one): ({move uci: move info} for the queen, [fork items])."""
+    queen: dict[str, dict] = {}
+    forks: list[dict] = []
+    for m in list(b.legal_moves):
+        if b.is_capture(m):
+            continue  # a capture that wins is a threat already; one that does not is no danger
+        san = b.san(m)
+        b.push(m)
+        try:
+            if not _landing_safe(b, m.to_square):
+                continue  # you would just take the piece
+            check = b.is_check()
+            c = b.copy(stack=False)
+            c.push(chess.Move.null())
+            new = [t for t in opponent_key(c)["threats"] if t["piece"] and t["target"] not in now]
+        finally:
+            b.pop()
+        targets = sorted({t["target"] for t in new})
+        pieces = [t for t in new if t["piece"] != "P"]  # a double attack on pawns is no fork worth the name
+        mv = {"move": m.uci(), "san": san, "from": chess.square_name(m.from_square), "to": chess.square_name(m.to_square),
+              "targets": targets}
+        if len(pieces) + (1 if check else 0) >= 2:
+            forks.append({"key": m.uci(), "moves": [mv], "targets": targets, "fork": True, "check": check})
+        elif any(t["piece"] == "Q" for t in new):
+            queen[m.uci()] = mv
+    return queen, forks
+
+
+def own_move(before: chess.Board, move: chess.Move) -> dict:
+    """What the opponent can do right after the user's `move` in `before` (the user to move there).
+
+    {"threats": [...] — what he can win at once (take, mate, queen a pawn), as in `analyse`;
+     "attacks": [{"key", "moves": [{"move", "san", "from", "to", "targets"}], "targets", "fork", "check"}] — his
+                quiet moves that land safely and attack two of your pieces at once (each fork its own item; a check
+                counts as one of the two), and the attacks on your queen that your move made possible (one item for
+                all of them: one arrow is enough) — an attack he had anyway is not your move's fault;
+     "defended", "exchanges" as in `analyse`}"""
+    b = before.copy(stack=False)
+    b.push(move)
+    if b.is_game_over():
+        return {"threats": [], "attacks": [], "defended": [], "exchanges": {}}
+    key = opponent_key(b)
+    now = {t["target"] for t in key["threats"]}
+    queen, forks = _attacks(b, now)
+    if queen:
+        passed = before.copy(stack=False)  # the same position as if you had not moved at all
+        passed.push(chess.Move.null())
+        had, _ = _attacks(passed, {t["target"] for t in opponent_key(passed)["threats"]})
+        queen = {u: mv for u, mv in queen.items() if u not in had}
+    items = []
+    if queen:
+        moves = list(queen.values())
+        items.append({"key": "Q", "moves": moves, "targets": moves[0]["targets"], "fork": False, "check": False})
+    key["attacks"] = items + forks
+    return key
+
+
+def describe_attack(a: dict, board: chess.Board) -> str:
+    """«на ферзя f4 можно напасть: Nd5, Bg5» / «вилка Nc7+: король e8, ладья a8»."""
+    if a["fork"]:
+        names = ([("король", "")] if a["check"] else []) + [(_who(board, t), "") for t in a["targets"]]
+        return f"вилка {a['moves'][0]['san']}: " + ", ".join(n for n, _ in names)
+    return f"{_who(board, a['targets'][0])} — можно напасть: " + ", ".join(m["san"] for m in a["moves"])
+
+
+def check_own(key: dict, arrows: list[dict], board: chess.Board) -> dict:
+    """The user's arrows after his own move against `own_move`'s key (`board`: the position after his move).
+    An arrow finds a «take» threat as in `check`, and an attack when it is the opponent's move itself, or goes from
+    the square where his piece lands to its target."""
+    by_square = {sq: t for t in key["threats"] for sq in t.get("targets") or [t["target"]]}
+    found, found_a, extra = set(), set(), []
+    for arrow in arrows:
+        a, b = arrow.get("from"), arrow.get("to")
+        hit = None
+        for frm, to in ((a, b), (b, a)):
+            t = by_square.get(to)
+            if t and frm in t["attackers"]:
+                hit = t["target"]
+                break
+        if hit:
+            found.add(hit)
+            continue
+        for at in key["attacks"]:
+            for mv in at["moves"]:
+                if (a, b) in ((mv["from"], mv["to"]), (mv["to"], mv["from"])) or \
+                        (a == mv["to"] and b in at["targets"]) or (b == mv["to"] and a in at["targets"]):
+                    found_a.add(at["key"])
+                    hit = at["key"]
+            if hit:
+                break
+        if hit:
+            continue
+        why = "defended" if (b in key["defended"] or a in key["defended"]) else "not_attacked"
+        extra.append({"from": a, "to": b, "why": why})
+    missed = [t["target"] for t in key["threats"] if t["target"] not in found]
+    missed_a = [at["key"] for at in key["attacks"] if at["key"] not in found_a]
+    items = [{"target": t["target"], "found": t["target"] in found, "text": describe(t, board),
+              "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in key["threats"]]
+    items += [{"target": at["key"], "found": at["key"] in found_a, "text": describe_attack(at, board), "detail": ""}
+              for at in key["attacks"]]
+    extras = []
+    for x in extra:
+        e = explain_extra(x, key, board) if x["why"] == "defended" else {"text": f"{x['from']}→{x['to']}: этого он не сможет", "detail": ""}
+        extras.append(e)
+    return {"found": sorted(found | found_a), "missed": missed + missed_a, "extra": extra,
+            "ok": not missed and not missed_a and not extra, "items": items, "extras": extras}

@@ -3,11 +3,12 @@
 A sitting has about 15 checks. It is made of series; a series of length L is a fragment of a game with L checks:
   1. a position from the pool (vision/sources: the user's games, other people's, Lichess puzzles turned around, or
      a position due for a repeat) and the opponent's real move in it — the first check;
-  2. if L > 1: the user makes his move on the board, the bot (Maia 1300, vision/bot.py) answers, check again —
-     until L checks are done or the game ends. A position where the bot gives check is not a check: the user just
-     answers it.
-L is the user's level (meta series_length, starts at 1): a series without a miss makes it one longer (max 30), two
-missed series in a row make it one shorter (min 1). So at level 1 it is the plain «one position, one move» drill.
+  2. if L > 1: the user draws his move as an arrow and, before it is played, the arrows of what the opponent can
+     do after it («проверь свой ход», vision/threats.own_move: what he can win at once, safe forks, attacks on
+     the queen the move made possible); «Хожу» checks that, plays the move, and the bot (Maia 1300, vision/bot.py)
+     answers; then check again — until L checks of the bot's moves are done or the game ends.
+L is the user's level (meta series_length, starts at 1): a series without a miss (in either kind of check) makes it
+one longer (max 30), two missed series in a row make it one shorter (min 1). So at level 1 it is the plain «one position, one move» drill.
 The first position of each series follows the old mix: repeats first (up to 30% of a sitting), then positions with a
 threat or quiet ones by vision/session.threat_share(); the window gets no hint of the kind or the source.
 
@@ -46,7 +47,8 @@ def _pick_start(p: dict) -> dict:
     """The first position of the next series: a due repeat (while repeats stay under 30% of the sitting), else a
     position with a threat or a quiet one by the current share."""
     if p["repeats"] < round(CHECKS * REPEAT_SHARE):
-        due = store.q("SELECT item FROM schedule WHERE due <= ? ORDER BY due LIMIT 20", (store.now_ms(),))
+        due = store.q("SELECT s.item FROM schedule s JOIN items i ON i.id = s.item WHERE s.due <= ? AND i.source != 'ownmove'"
+                      " ORDER BY s.due LIMIT 20", (store.now_ms(),))
         for r in due:
             if r["item"] not in p["used"]:
                 p["repeats"] += 1
@@ -72,9 +74,9 @@ def _view(p: dict, extra: dict | None = None) -> dict:
     out = {
         "play": p["id"], "phase": p["phase"], "checks": p["checks"], "budget": CHECKS, "fen": board.fen(),
         "orientation": _side(p["user"]),
-        "series": {"no": p["series_no"], "length": sr["length"], "checks": sr["checks"]},
+        "series": {"no": p["series_no"], "length": sr["length"], "checks": sr["checks"], "own": sr.get("own", 0)},
     }
-    if p["phase"] == "move":
+    if p["phase"] == "plan":
         d: dict[str, list[str]] = {}
         for m in board.legal_moves:
             d.setdefault(chess.square_name(m.from_square), []).append(chess.square_name(m.to_square))
@@ -94,7 +96,7 @@ def _new_series(p: dict) -> dict:
     board.push(move)
     p["board"] = board
     p["series_no"] += 1
-    p["series"] = {"length": p["level"], "checks": 0, "misses": 0}
+    p["series"] = {"length": p["level"], "checks": 0, "own": 0, "misses": 0}
     p["item"] = it["id"]  # the first check is answered on the pool position itself
     p["last"] = {"fen": it["fen"], "move": it["move"]}
     p["phase"] = "check"
@@ -130,7 +132,7 @@ def _bot_turn(p: dict) -> dict:
         shown["series_end"] = _end_series(p, game_over=True)
         p["phase"] = "next"
     elif board.is_check():
-        p["phase"] = "move"  # answer the check; not a check of the drill
+        p["phase"] = "plan"  # answer the check (no threat check here: the check is the threat)
         shown["check"] = True
     else:
         p["phase"] = "check"
@@ -190,15 +192,16 @@ def answer(pid: str, arrows: list[dict], ms: int) -> dict:
         extra["series_end"] = _end_series(p, game_over=board.is_game_over())
         p["phase"] = "next"
     else:
-        p["phase"] = "move"
+        p["phase"] = "plan"
     if p["phase"] == "next":
         extra["last"] = p["checks"] >= CHECKS
     return _view(p, extra)
 
 
-def move(pid: str, uci: str, ms: int) -> dict:
+def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
+    """The user's own move with his arrows of what the opponent can do after it: checked, then played."""
     p = PLAYS[pid]
-    if p["phase"] != "move":
+    if p["phase"] != "plan":
         raise ValueError("сейчас не твой ход")
     board: chess.Board = p["board"]
     mv = chess.Move.from_uci(uci)
@@ -206,19 +209,44 @@ def move(pid: str, uci: str, ms: int) -> dict:
         mv = chess.Move.from_uci(uci + "q")  # a pawn reaching the last rank becomes a queen
         if mv not in board.legal_moves:
             raise ValueError("такого хода нет")
-    events.log("user_move", series=pid, san=board.san(mv), uci=mv.uci(), ms=ms)
+    arrows = [{"from": str(a.get("from")), "to": str(a.get("to"))} for a in arrows[:30] if isinstance(a, dict)]
+    key = threats.own_move(board, mv)
+    before_fen, san = board.fen(), board.san(mv)
     board.push(mv)
+    result = threats.check_own(key, arrows, board)
+    side = "w" if p["user"] == chess.WHITE else "b"
+    store.add_item("ownmove", before_fen, mv.uci(), side, {**key, "threats": key["threats"]}, ref=pid,
+                   ply=len(board.move_stack))
+    row = store.q("SELECT id FROM items WHERE key = ?", (f"ownmove|{before_fen}|{mv.uci()}",))
+    if row:
+        store.record(row[0]["id"], pid, ms, len(key["threats"]) + len(key["attacks"]), result, arrows)
+    sr = p["series"]
+    p["checks"] += 1
+    sr["own"] += 1
+    sr["misses"] += not result["ok"]
+    p["answers"].append({"ok": result["ok"], "threats": len(key["threats"]) + len(key["attacks"]),
+                         "found": len(result["found"]), "extra": len(result["extra"]), "ms": ms, "own": True})
+    events.log("own_check", session=pid, san=san, uci=mv.uci(), ok=result["ok"], found=result["found"],
+               missed=result["missed"], extra=result["extra"], arrows=arrows, ms=ms, series=p["series_no"])
+    extra: dict = {"own": {"result": result, "threats": key["threats"], "attacks": key["attacks"], "move": mv.uci(),
+                           "san": san, "before": before_fen}}
     if board.is_game_over():
         p["phase"] = "next"
-        return _view(p, {"series_end": _end_series(p, game_over=True), "last": p["checks"] >= CHECKS})
-    extra = _bot_turn(p)
-    if p["phase"] == "next":
+        extra["series_end"] = _end_series(p, game_over=True)
         extra["last"] = p["checks"] >= CHECKS
+    else:
+        p["phase"] = "bot"
     return _view(p, extra)
 
 
 def next_series(pid: str) -> dict:
+    """«Дальше»: the bot's answer to the user's move, or the next series, or the summary."""
     p = PLAYS[pid]
+    if p["phase"] == "bot":
+        extra = _bot_turn(p)
+        if p["phase"] == "next":
+            extra["last"] = p["checks"] >= CHECKS
+        return _view(p, extra)
     if p["phase"] != "next":
         raise ValueError("серия ещё идёт")
     if p["checks"] >= CHECKS:

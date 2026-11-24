@@ -137,3 +137,16 @@ def test_a_pawn_walking_in_to_queen_is_a_threat():
     res = threats.check(answer, [{"from": "a1", "to": "g1"}, {"from": "b2", "to": "b1"}], after)
     assert res["ok"]
     assert "проходит в ферзи" in res["items"][1]["text"]
+
+
+def test_own_move_that_lets_a_knight_hit_the_queen():
+    # 2026-11-24: the user moved the knight that guarded d5 (Nc3-e4) and the black knight jumped to d5 onto the queen
+    before = chess.Board("r2q2k1/1p3ppp/p2p1n1n/8/5Q2/2N2N2/PP3PPP/4R1K1 w - - 0 1")
+    key = threats.own_move(before, chess.Move.from_uci("c3e4"))
+    assert [m["san"] for a in key["attacks"] for m in a["moves"]] == ["Nd5"]
+    after = before.copy()
+    after.push_uci("c3e4")
+    assert threats.check_own(key, [{"from": "f6", "to": "d5"}], after)["ok"]
+    assert not threats.check_own(key, [], after)["ok"]
+    # a quiet move that changes nothing: the attacks he had anyway are not the move's fault
+    assert threats.own_move(before, chess.Move.from_uci("h2h3"))["attacks"] == []

@@ -97,6 +97,14 @@ def line(e: dict) -> str | None:
                     f"{SOURCE.get(src, src)}{rep} · угроз {e.get('threats')}{motif}")
         case "bot_move":
             return f"{t}   бот: {e.get('san')}"
+        case "own_check":
+            head = "✔" if e.get("ok") else "✘"
+            parts = []
+            if e.get("missed"):
+                parts.append("пропущено " + ", ".join(map(str, e["missed"])))
+            if e.get("extra"):
+                parts.append("лишние " + ", ".join(f"{x['from']}→{x['to']}" for x in e["extra"]))
+            return f"{t}   ты: {e.get('san')} — проверка своего хода через {sec(e.get('ms'))} → {head} {' · '.join(parts)}"
         case "user_move":
             return f"{t}   ты: {e.get('san')} (думал {sec(e.get('ms'))})"
         case "series_end":
