@@ -687,7 +687,12 @@ async function showStart() {
 async function refreshState() {
   clearTimeout(stateTimer);
   let st;
-  try { st = await api("/api/state"); } catch (e) { statusEl.textContent = "сервер не отвечает"; statusEl.className = "status bad"; return; }
+  try { st = await api("/api/state"); } catch (e) {
+    // asked again until it answers: the Mac app may be restarting, and the note must go once it is back
+    statusEl.textContent = "сервер не отвечает"; statusEl.className = "status bad";
+    stateTimer = setTimeout(refreshState, 5000);
+    return;
+  }
   const imp = st.import;
   statusEl.className = "status";
   statusEl.innerHTML = imp.running ? `<span class="spin"></span>готовлю позиции` : "";
