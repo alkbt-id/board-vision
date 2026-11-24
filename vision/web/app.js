@@ -70,9 +70,11 @@ const cg = Chessground($("#board"), {
     enabled: true, visible: true, eraseOnMovablePieceClick: false,
     brushes: {
       green: { key: "g", color: "#15781B", opacity: 1, lineWidth: 10 },
+      orange: { key: "o", color: "#e07b00", opacity: 1, lineWidth: 10 }, // the threats you draw (the orange frame)
       red: { key: "r", color: "#882020", opacity: 1, lineWidth: 10 },
       grey: { key: "gr", color: "#4a4a4a", opacity: 0.45, lineWidth: 10 },
       paleGreen: { key: "pg", color: "#15781B", opacity: 0.4, lineWidth: 15 },
+      paleOrange: { key: "po", color: "#e07b00", opacity: 0.45, lineWidth: 15 },
     },
     // right-button arrows, drawn by chessground itself
     onChange: (shapes) => syncArrows(shapes, "mouse-right"),
@@ -87,7 +89,7 @@ let myMove = null; // «проверь свой ход»: your own move, the fir
 const drawingNow = () => S.phase === "draw" || S.phase === "plan";
 const sameLine = (a, b) => (a.from === b.from && a.to === b.to) || (a.from === b.to && a.to === b.from);
 const toShapes = (list) => [...(myMove ? [{ orig: myMove.from, dest: myMove.to, brush: "blue" }] : []),
-  ...list.map((a) => ({ orig: a.from, dest: a.to, brush: "green" }))];
+  ...list.map((a) => ({ orig: a.from, dest: a.to, brush: "orange" }))];
 const PIECE_RU = { pawn: "пешка", knight: "конь", bishop: "слон", rook: "ладья", queen: "ферзь", king: "король" };
 function moveName(m) {
   const p = cg.state.pieces.get(m.from);
@@ -192,7 +194,7 @@ function setPick(key) {
   cg.set({ highlight: { custom: key ? new Map([[key, "from-pick"]]) : new Map() } });
 }
 function preview(from, to) {
-  cg.setAutoShapes(from && to && from !== to ? [{ orig: from, dest: to, brush: "paleGreen" }] : []);
+  cg.setAutoShapes(from && to && from !== to ? [{ orig: from, dest: to, brush: S.phase === "plan" && !myMove ? "paleBlue" : "paleOrange" }] : []);
 }
 // Where a finger meant to end. A finger hides the square and the lift often slides on by a square (the user aimed
 // d2→e2 and got d2→f2): take the square the finger was on a moment before it left the glass, and if the arrow
@@ -260,7 +262,7 @@ for (const t of ["mousedown", "touchstart"]) {
 wrap.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // ---------- what to do now, on the board itself: a coloured strip over it and a frame of the same colour ----------
-// green — draw the opponent's threats (green arrows); blue — draw your own move (the blue arrow)
+// orange — draw the opponent's threats (orange arrows); blue — draw your own move (the blue arrow)
 function syncMode() {
   const el = document.getElementById("board-mode");
   if (!el) return;
