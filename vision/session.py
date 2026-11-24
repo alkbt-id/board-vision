@@ -100,7 +100,7 @@ def _score(rows: list) -> dict:
             "threat_ok": sum(t), "threat_n": len(t), "quiet_ok": sum(q), "quiet_n": len(q)}
 
 
-def progress(limit: int = 60) -> dict:
+def progress(limit: int | None = None) -> dict:
     """The chart: the attention rating after each played-out position — a series (the user, 2026-11-24: «просто
     пересчитывай после каждой позиции»); answers from before series were stored count per session.
     {"start": 1500, "rating": current, "points": [{session, ts, rating, n, median_s}, ...] oldest first}."""
@@ -119,7 +119,9 @@ def progress(limit: int = 60) -> dict:
         p.pop("min")
         ms = p.pop("ms")
         p["median_s"] = round(statistics.median(ms) / 1000, 1) if ms else None
-    return {"start": rating.START, "rating": points[-1]["rating"] if points else rating.START, "points": points[-limit:]}
+    # every point: the trend over weeks is what tells whether the method works (a side note, 2026-11-24)
+    return {"start": rating.START, "rating": points[-1]["rating"] if points else rating.START,
+            "points": points[-limit:] if limit else points}
 
 
 def history(days: int = 30) -> list[dict]:

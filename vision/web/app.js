@@ -484,10 +484,10 @@ function layout() {
   app.classList.toggle("moves-below", playing && below);
   app.classList.toggle("side-below", !playing && below);
   // the frame: a little of the size on each side; the squares get the rest, a multiple of 8
-  const frame = Math.min(26, Math.max(16, Math.round(size * 0.032)));
+  const frame = Math.min(30, Math.max(18, Math.round(size * 0.036)));
   size = Math.floor((size - 2 * frame) / 8) * 8 + 2 * frame;
   wrap.style.setProperty("--frame", `${frame}px`);
-  wrap.style.setProperty("--coord", `${Math.round(frame * 0.62)}px`);
+  wrap.style.setProperty("--coord", `${Math.round(frame * 0.56)}px`);
   renderCoords();
   wrap.style.width = wrap.style.height = `${size}px`;
   $("#board-mode").style.width = `${size}px`;
@@ -560,7 +560,8 @@ function lineChart(el, pts, o) {
     add("path", { d: `${d} L${x(pts.length - 1)},${H - B} L${x(0)},${H - B} Z`, class: "area" });
     add("path", { d, class: "line" });
   }
-  pts.forEach((p, i) => add("circle", { cx: x(i), cy: y(p[o.key]), r: i === pts.length - 1 ? 5 : 4, class: i === pts.length - 1 ? "dot last" : "dot" }));
+  // a long history: the line alone, with the last point marked (dots would merge into a smear)
+  pts.forEach((p, i) => { if (pts.length <= 60 || i === pts.length - 1) add("circle", { cx: x(i), cy: y(p[o.key]), r: i === pts.length - 1 ? 5 : 4, class: i === pts.length - 1 ? "dot last" : "dot" }); });
   const cross = add("line", { x1: 0, x2: 0, y1: T, y2: H - B, class: "cross", visibility: "hidden" });
   const head = document.createElement("div");
   head.className = "chart-head";
