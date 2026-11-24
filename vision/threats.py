@@ -332,6 +332,16 @@ def explain_extra(extra: dict, answer: dict, after: chess.Board) -> dict:
     return {"text": f"{head}: тут нечего брать", "detail": ""}
 
 
+def _battery(items: list[dict], a: str | None, b: str | None) -> dict | None:
+    """A threat marked along its battery: an arrow from the piece behind to the one in front (Rf1→f7 when Rf7 takes
+    on f8 with Rf1 behind it), either way round — the user, 2026-11-24, drew Rf1→f7 for Rxf8+ and got ✕."""
+    for frm, to in ((a, b), (b, a)):
+        for t in items:
+            if to in t["attackers"] and frm in (t.get("xray") or []):
+                return t
+    return None
+
+
 def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bool = True,
           played: dict | None = None, with_tactics: bool = True, with_threats: bool = True) -> dict:
     """Compare the user's arrows ({"from": "d8", "to": "d4"}) with the answer key: his threats and, with
@@ -366,7 +376,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
     found, extra = set(), []
     for arrow in arrows:
         a, b = arrow.get("from"), arrow.get("to")
-        t = match(a, b) or match(b, a)  # as drawn first: a threat and a chance can share two squares
+        t = match(a, b) or match(b, a) or _battery(keys, a, b)  # as drawn first: a threat and a chance can share two squares
         if t:
             found.add(t["target"])
             continue
@@ -498,6 +508,8 @@ def check_own(key: dict, arrows: list[dict], board: chess.Board) -> dict:
             if t and (frm in t["attackers"] or frm in (t.get("xray") or [])):
                 hit = t["target"]
                 break
+        if not hit and (t := _battery(key["threats"], a, b)):
+            hit = t["target"]
         if hit:
             found.add(hit)
             continue

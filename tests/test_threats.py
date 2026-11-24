@@ -292,3 +292,14 @@ def test_his_fork_after_your_move_is_found_by_its_arrow():
     assert threats.check_own(key, [{"from": "b5", "to": "c7"}], board)["ok"]
     res = threats.check_own(key, [], board)
     assert not res["ok"] and res["missed"] == ["b5c7"]
+
+
+def test_a_battery_arrow_from_the_piece_behind_finds_the_threat():
+    # the user's game 2026-11-24: after ...g5, Rxf8+ with Rf1 behind Rf7; he drew Rf1→f7 (and f7→f8)
+    before = chess.Board("5rk1/2p2Rp1/p1qp3p/1p6/1P4Q1/P3P2P/1P4P1/5RK1 b - - 0 24")
+    move = chess.Move.from_uci("g7g5")
+    key = {**threats.own_move(before, move), "attacks": []}
+    after = before.copy()
+    after.push(move)
+    res = threats.check_own(key, [{"from": "f1", "to": "f7"}], after)
+    assert res["ok"] and res["found"] == ["f8"]
