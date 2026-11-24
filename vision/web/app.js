@@ -60,7 +60,7 @@ document.addEventListener("pointerdown", unlockAudio, { once: true, capture: tru
 
 // ---------- the board ----------
 const cg = Chessground($("#board"), {
-  coordinates: true,
+  coordinates: false, // drawn on the frame around the board instead (renderCoords)
   animation: { enabled: true, duration: 250 },
   movable: { free: false, color: undefined },
   premovable: { enabled: false },
@@ -417,6 +417,18 @@ function setPlaying(on) {
   layout();
 }
 
+// ---------- the coordinates on the frame: files above and below, ranks on both sides, turned with the board ----------
+let coordsFor = "";
+function renderCoords() {
+  const o = cg.state.orientation;
+  if (o === coordsFor) return;
+  coordsFor = o;
+  const files = o === "white" ? "abcdefgh" : "hgfedcba", ranks = o === "white" ? "87654321" : "12345678";
+  const spans = (s) => [...s].map((c) => `<span>${c}</span>`).join("");
+  for (const id of ["#fc-top", "#fc-bottom"]) $(id).innerHTML = spans(files);
+  for (const id of ["#fc-left", "#fc-right"]) $(id).innerHTML = spans(ranks);
+}
+
 // ---------- the moves of the game fragment, on the right, as on Lichess: number, white, black; the last one lit ----------
 const MOVES_W = 232;
 // a piece letter of SAN as a small Merida piece, as the board draws it (Nf3 → [knight]f3)
@@ -453,7 +465,7 @@ function layout() {
   const top = $(".top").getBoundingClientRect().height;
   const strip = $("#board-mode").getBoundingClientRect().height + 6;
   const H = window.innerHeight - top - 28 - strip, W = window.innerWidth - 28;
-  const fit = (h, w) => Math.max(240, Math.floor(Math.min(h, w) / 8) * 8);
+  const fit = (h, w) => Math.max(240, Math.floor(Math.min(h, w) / 8) * 8); // the board with its frame
   let size, below = false;
   if (playing) {
     const right = fit(H, W - MOVES_W - 14), under = fit(H - MOVES_H - 14, W);
@@ -471,6 +483,12 @@ function layout() {
   }
   app.classList.toggle("moves-below", playing && below);
   app.classList.toggle("side-below", !playing && below);
+  // the frame: a little of the size on each side; the squares get the rest, a multiple of 8
+  const frame = Math.min(26, Math.max(16, Math.round(size * 0.032)));
+  size = Math.floor((size - 2 * frame) / 8) * 8 + 2 * frame;
+  wrap.style.setProperty("--frame", `${frame}px`);
+  wrap.style.setProperty("--coord", `${Math.round(frame * 0.62)}px`);
+  renderCoords();
   wrap.style.width = wrap.style.height = `${size}px`;
   $("#board-mode").style.width = `${size}px`;
   const moves = $("#moves");
@@ -620,6 +638,7 @@ async function showStart() {
   wrap.classList.add("locked");
   lockBoard();
   cg.set({ fen: "start", orientation: "white", lastMove: undefined, check: false });
+  renderCoords();
   cg.setShapes([]);
   cg.setAutoShapes([]);
   await loadProgress();
@@ -713,6 +732,7 @@ function playShow(v) {
   if (v.new_series) {
     cg.set({ animation: { enabled: false } });
     cg.set({ fen: v.bot.before, orientation: v.orientation, lastMove: undefined, check: false });
+    renderCoords();
     cg.set({ animation: { enabled: true, duration: 250 } });
   } else cg.set({ fen: v.bot.before });
   setTimeout(() => {

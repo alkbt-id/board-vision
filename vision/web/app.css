@@ -275,3 +275,18 @@ details.rules p { margin: 8px 0 0; }
 .app.side-below details.rules { grid-column: 1; grid-row: 4; }
 .app.side-below #ch-rating { grid-column: 2; grid-row: 1 / span 2; }
 .app.side-below #ch-time { grid-column: 2; grid-row: 3 / span 2; }
+
+/* ---------- the frame around the board, as on a real wooden board: dark wood, the coordinates in cream on all sides
+   (the user, 2026-11-24: «сделай края доски небольшие для координат», «чтобы были видны хорошо», «как на реальной доске») */
+.board-wrap { padding: var(--frame, 20px); background: #6b4528;
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, .06), rgba(0, 0, 0, .12)); }
+.board-wrap #board { box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
+.fc { position: absolute; display: flex; pointer-events: none; user-select: none; color: #f1dfbf;
+  font: 700 var(--coord, 13px) / 1 var(--font-body); letter-spacing: .02em; }
+.fc span { flex: 1 1 0; display: grid; place-items: center; }
+.fc-n, .fc-s { left: var(--frame, 20px); right: var(--frame, 20px); height: var(--frame, 20px); }
+.fc-n { top: 1px; }
+.fc-s { bottom: 4px; } /* clear of the colour frame (5px) */
+.fc-w, .fc-e { top: var(--frame, 20px); bottom: var(--frame, 20px); width: var(--frame, 20px); flex-direction: column; }
+.fc-w { left: 3px; }
+.fc-e { right: 3px; }
