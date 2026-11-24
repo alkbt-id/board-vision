@@ -49,7 +49,8 @@ def line(e: dict) -> str | None:
         case "move_shown":
             return None
         case "arrow_add":
-            return f"{t}     ↗ {e.get('from')}→{e.get('to')} через {sec(e.get('ms'))}"
+            slid = f" (палец ушёл на {e['lifted_on']})" if e.get("lifted_on") else ""
+            return f"{t}     ↗ {e.get('from')}→{e.get('to')} через {sec(e.get('ms'))}{slid}"
         case "arrow_del":
             return f"{t}     ✕ стёрта {e.get('from')}→{e.get('to')} ({sec(e.get('ms'))})"
         case "arrows_clear":

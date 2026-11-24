@@ -101,13 +101,13 @@ function syncArrows(shapes, how) {
   }
   setArrows(next);
 }
-function toggleArrow(from, to, how) {
+function toggleArrow(from, to, how, extra = {}) {
   const twin = arrows.find((b) => sameLine({ from, to }, b));
   if (twin) {
     log("arrow_del", { ...twin, ms: ms(), how: twin.from === from ? how : `${how}-reverse` });
     setArrows(arrows.filter((b) => b !== twin));
   } else {
-    log("arrow_add", { from, to, ms: ms(), how });
+    log("arrow_add", { from, to, ms: ms(), how, ...extra });
     setArrows([...arrows, { from, to }]);
   }
 }
@@ -138,13 +138,39 @@ function renderArrows() {
 // Left mouse button and fingers draw too (chessground draws only with the right button and would clear the arrows
 // on a left click): a drag draws an arrow; a tap on one square, then on another, does the same.
 const keyAt = (x, y) => { cg.state.dom.bounds.clear(); return cg.getKeyAtDomPos([x, y]); };
-const drag = { from: null, id: null, moved: false };
+const drag = { from: null, id: null, moved: false, trail: [] };
 function setPick(key) {
   S.pick = key;
   cg.set({ highlight: { custom: key ? new Map([[key, "from-pick"]]) : new Map() } });
 }
 function preview(from, to) {
   cg.setAutoShapes(from && to && from !== to ? [{ orig: from, dest: to, brush: "paleGreen" }] : []);
+}
+// Where a finger meant to end. A finger hides the square and the lift often slides on by a square (the user aimed
+// d2→e2 and got d2→f2): take the square the finger was on a moment before it left the glass, and if the arrow
+// runs along a line past one of your pieces onto an empty square, stop it at that piece — an arrow always ends
+// on your piece, except a mate on an empty square, and a mating move's path never crosses a piece.
+const LIFT_MS = 120;
+function aimedEnd(from, trail, upKey, upTime) {
+  let end = upKey;
+  for (let i = trail.length - 1; i >= 0; i--) {
+    if (upTime - trail[i].t >= LIFT_MS) { end = trail[i].k; break; }
+  }
+  if (!end || end === from) end = upKey;
+  return snapToPiece(from, end);
+}
+function snapToPiece(from, to) {
+  if (!from || !to || cg.state.pieces.get(to)) return to;
+  const f0 = from.charCodeAt(0), r0 = +from[1], f1 = to.charCodeAt(0), r1 = +to[1];
+  const df = Math.sign(f1 - f0), dr = Math.sign(r1 - r0);
+  if (!(f0 === f1 || r0 === r1 || Math.abs(f1 - f0) === Math.abs(r1 - r0))) return to; // not along a line
+  const me = S.pos?.orientation;
+  for (let f = f0 + df, r = r0 + dr; f !== f1 || r !== r1; f += df, r += dr) {
+    const k = String.fromCharCode(f) + r;
+    const p = cg.state.pieces.get(k);
+    if (p) return p.color === me ? k : to;
+  }
+  return to;
 }
 wrap.addEventListener("pointerdown", (e) => {
   if (e.pointerType === "mouse" && e.button !== 0) return; // the right button: chessground
@@ -154,22 +180,25 @@ wrap.addEventListener("pointerdown", (e) => {
   drag.from = keyAt(e.clientX, e.clientY);
   drag.id = e.pointerId;
   drag.moved = false;
+  drag.trail = [];
   wrap.setPointerCapture?.(e.pointerId);
 }, { capture: true });
 wrap.addEventListener("pointermove", (e) => {
   if (drag.id !== e.pointerId || !drag.from) return;
   const k = keyAt(e.clientX, e.clientY);
   if (k && k !== drag.from) drag.moved = true;
-  if (drag.moved) preview(drag.from, k);
+  if (k && (!drag.trail.length || drag.trail[drag.trail.length - 1].k !== k)) drag.trail.push({ k, t: performance.now() });
+  if (drag.moved) preview(drag.from, e.pointerType === "mouse" ? k : snapToPiece(drag.from, k));
 }, { capture: true });
 wrap.addEventListener("pointerup", (e) => {
   if (drag.id !== e.pointerId) return;
-  const from = drag.from, to = keyAt(e.clientX, e.clientY);
+  const from = drag.from, upKey = keyAt(e.clientX, e.clientY);
+  const to = e.pointerType === "mouse" ? upKey : aimedEnd(from, drag.trail, upKey, performance.now());
   drag.from = drag.id = null;
   preview(null);
   if (S.phase !== "draw" || !from) return;
   const how = e.pointerType === "touch" ? "touch" : e.pointerType === "pen" ? "pen" : "mouse-left";
-  if (to && to !== from) { setPick(null); toggleArrow(from, to, `${how}-drag`); return; }
+  if (to && to !== from) { setPick(null); toggleArrow(from, to, `${how}-drag`, to !== upKey ? { lifted_on: upKey } : {}); return; }
   // a tap
   if (!S.pick) setPick(from);
   else if (S.pick === from) setPick(null);
