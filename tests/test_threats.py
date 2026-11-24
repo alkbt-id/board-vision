@@ -244,7 +244,7 @@ def test_his_check_that_forks_is_a_threat():
     after = chess.Board("r3k3/pp6/8/1N6/8/8/PP6/4K3 b - - 0 1")
     key = threats.analyse(after)
     line = [chess.Move.from_uci(u) for u in ("b5c7", "e8d7", "c7a8", "d7c6")]
-    threats.add_tactics(key, after, lambda b: [{"pv": line, "mate": None}] if b.turn == chess.WHITE else [])
+    threats.add_tactics(key, after, lambda b, **kw: [{"pv": line, "mate": None}] if b.turn == chess.WHITE else [])
     t = [t for t in key["threats"] if t.get("tactic")]
     assert len(t) == 1 and t[0]["tactic"] == "check" and t[0]["attackers"] == ["b5"]
     assert set(t[0]["targets"]) >= {"c7", "a8", "e8"}
@@ -259,7 +259,7 @@ def test_your_forced_mate_is_a_chance_found_by_a_circle_on_his_king_or_by_playin
     key = threats.analyse(after)
     key["chances"] = []  # pretend the rule's mate in one is not there: a fake mate in 2 instead
     line = [chess.Move.from_uci(u) for u in ("a1a7", "h7h6", "a7a8")]
-    threats.add_tactics(key, after, lambda b: [{"pv": line, "mate": 2}] if b.turn == chess.WHITE else [])
+    threats.add_tactics(key, after, lambda b, **kw: [{"pv": line, "mate": 2}] if b.turn == chess.WHITE else [])
     assert [t["tactic"] for t in key["chances"]] == ["mate"]
     assert threats.check(key, [{"from": "g8", "to": "g8"}], after)["ok"]
     assert threats.check(key, [], after, played={"from": "a1", "to": "a7"})["ok"]

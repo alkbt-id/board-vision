@@ -147,7 +147,8 @@ async def lifespan(_app):
 
     def background() -> None:
         migrate.run()  # a changed threat rule: positions and past answers first
-        if refresh:
+        migrate.sources_v2()  # puzzles from the solver's side, real misses that could be parried (once)
+        if refresh or not store.counts().get("puzzle"):
             sources.refresh()
 
     threading.Thread(target=background, name="startup", daemon=True).start()

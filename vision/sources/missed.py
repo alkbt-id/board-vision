@@ -4,7 +4,9 @@ The same games as lichess_db.py (rated rapid, both players in the rating band of
 the month's file. A moment counts when, right after the opponent's move, the rule (vision/threats.py) finds a threat
 against the player, the player makes some other move, and the opponent then really takes there and comes out at
 least 2 pawns ahead (or mates). No engine is needed: the game itself shows the threat was real and was missed.
-The drill position is the one the player saw: before the opponent's move, that move, the player to answer.
+The drill position is the one the player saw: before the opponent's move, that move, the player to answer. Only a
+moment where the threat could be parried is kept — with best play the player is not lost there (Stockfish,
+play.NOT_LOST): «could have saved it, did not see it» (the user, 2026-11-24: no lost positions).
 """
 
 import io
@@ -13,13 +15,14 @@ import random
 import chess
 import chess.pgn
 
-from .. import config, store, threats
+from .. import config, engine, store, threats
 from . import lichess_db, say, side_name
 
 GAMES_PER_RUN = 6000  # games read at most per run (a stream: the file is not downloaded)
 TAKE_PER_RUN = 500  # moments stored at most per run
 POOL_TARGET = 2500  # stop adding once there are this many
 GAIN = 2  # what the opponent must win by the taking, in pawns
+NOT_LOST = -300  # the player's side with best play (centipawns), as for a series start (vision/play.py)
 
 
 def moments(moves: list[chess.Move]) -> list[tuple[chess.Board, chess.Move, int, str]]:
@@ -81,14 +84,18 @@ def run() -> None:
                 if pgn is None or pgn.errors:
                     continue
                 found = moments(list(pgn.mainline_moves()))
-                if found:  # one moment a game, so the pool is not a few long games
-                    before, move, ply, what = rng.choice(found)
+                rng.shuffle(found)
+                for before, move, ply, what in found:  # one playable moment a game
                     after = before.copy(stack=False)
                     after.push(move)
+                    e = engine.evaluate(after, after.turn)
+                    if e is not None and e < NOT_LOST:
+                        continue  # the threat could not be parried: a lost position, not a miss to train
                     answer = threats.analyse(after)
                     if answer and store.add_item("missed", before.fen(), move.uci(), side_name(after.turn), answer,
                                                  ref=head.get("Site", ""), ply=ply, motif=what):
                         taken += 1
+                    break
                 if read % 500 == 0:
                     say(f"реальные зевки {month}: найдено {taken} в {read} партиях")
                 if taken >= TAKE_PER_RUN or read >= GAMES_PER_RUN:

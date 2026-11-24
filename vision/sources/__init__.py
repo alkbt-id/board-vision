@@ -2,7 +2,7 @@
 
   own.py         the user's own games (Lichess API and chess.com's published data), every opponent move
   lichess_db.py  other people's rapid games at the user's level, read as a stream from the Lichess open database
-  puzzles.py     Lichess puzzles turned around: the position right after the winning blow, the user on the side hit
+  puzzles.py     Lichess puzzles from the solver's side: the opponent's mistake is his move, the blow is the user's
   missed.py      moments of those games where a player did not see a threat and the opponent then took (real misses)
   quiet.py       Stockfish's check of positions without threats: only truly quiet ones are shown as quiet
   tactics.py     Stockfish's forcing lines (mates in 2–3, winning checks) for the pool: threats the rule does not see

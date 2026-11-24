@@ -231,7 +231,8 @@ def add_tactics(key: dict, after: chess.Board, forcing) -> dict:
     move handed to him, to "threats"; the user's to "chances". key["engine"] is True when the engine answered."""
     him = after.copy(stack=False)
     him.push(chess.Move.null())
-    his, mine = forcing(chess.Board(him.fen())), forcing(after.copy(stack=False))
+    # the user's quiet winning moves too (a fork, a pin): a Lichess puzzle's blow often is one
+    his, mine = forcing(chess.Board(him.fen())), forcing(after.copy(stack=False), quiet=True)
     if his is None or mine is None:
         return key
     key["threats"] = key["threats"] + tactic_items(chess.Board(him.fen()), his, key["threats"], "he")

@@ -54,7 +54,8 @@ def _pick_start(p: dict) -> dict:
     """The first position of the next series: a due repeat (in REPEAT_SHARE of the picks), else a position with a
     threat or a quiet one by the current share."""
     if random.random() < REPEAT_SHARE:
-        due = store.q("SELECT s.item FROM schedule s JOIN items i ON i.id = s.item WHERE s.due <= ? AND i.source != 'ownmove'"
+        due = store.q("SELECT s.item FROM schedule s JOIN items i ON i.id = s.item WHERE s.due <= ?"
+                      " AND i.source NOT IN ('ownmove', 'puzzle_old', 'missed_lost')"
                       " ORDER BY s.due LIMIT 20", (store.now_ms(),))
         for r in due:
             if r["item"] not in p["used"]:
@@ -64,12 +65,12 @@ def _pick_start(p: dict) -> dict:
                     it["repeat"] = True
                     return it
     if random.random() < session.threat_share():
-        near = session.pick_near("n_threats > 0", session.THREAT_SOURCES, p["used"], p["rating"], p["points"])
-        ids = [near] if near else session._pick("n_threats > 0", session.THREAT_SOURCES, 1, p["used"])
+        near = session.pick_near(session.SHARP, session.THREAT_SOURCES, p["used"], p["rating"], p["points"])
+        ids = [near] if near else session._pick(session.SHARP, session.THREAT_SOURCES, 1, p["used"])
     else:
         ids = session._pick("n_threats = 0 AND quiet_ok = 1", session.QUIET_SOURCES, 1, p["used"])
     if not ids:
-        ids = session._pick("n_threats > 0", session.THREAT_SOURCES, 1, p["used"])
+        ids = session._pick(session.SHARP, session.THREAT_SOURCES, 1, p["used"])
     it = store.item(ids[0])
     assert it is not None
     it["repeat"] = False
@@ -97,8 +98,8 @@ def _view(p: dict, extra: dict | None = None) -> dict:
 def _new_series(p: dict) -> dict:
     """The next series. With moves to play (level 2+) it starts only where your side is not lost with best play:
     traps and hard positions yes, positions lost in advance (most turned-around puzzles: the blow has landed) no.
-    A lost start that is a Lichess puzzle, a real miss or a repeat becomes a single check between series (it does not move the
-    level), so puzzles and repeats keep coming at any level; another lost start is skipped (TRIES picks at most)."""
+    A lost start is skipped, whatever its source (the user, 2026-11-24: «а тут опять проигранная позиция? … должны же
+    были все проверить?»); only when TRIES picks in a row are lost does the last one come as a single check."""
     single = False
     for attempt in range(TRIES):
         it = _pick_start(p)
@@ -107,14 +108,10 @@ def _new_series(p: dict) -> dict:
         move = chess.Move.from_uci(it["move"])
         board = before.copy()
         board.push(move)
-        if p["level"] < 2:
-            break
         e = engine.evaluate(board, board.turn)
         if e is None or e >= NOT_LOST:
             break
-        if it["repeat"] or it["source"] in ("puzzle", "missed") or attempt == TRIES - 1:
-            # a Lichess puzzle (the blow has landed) or a repeat: still worth seeing, as one check between
-            # series, not as a game to play on; it does not move the level
+        if attempt == TRIES - 1:  # nothing playable found: one check, not a game to play on; the level stays
             single = True
             break
     p["user"] = not before.turn
@@ -225,7 +222,6 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
                       (json.dumps(key, ensure_ascii=False), len(key["threats"]), item_id))
     sr = p["series"]
     p["checks"] += 1
-    sr["checks"] += 1
     sr["misses"] += not result["ok"]
     p["answers"].append({"ok": result["ok"], "threats": result["n"], "found": len(result["found"]),
                          "extra": len(result["extra"]), "ms": ms})
@@ -287,6 +283,8 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
     sr = p["series"]
     p["checks"] += 1
     sr["own"] += 1
+    sr["checks"] += 1  # a turn done: counted here, so a turn that answers a check (no step 1) counts too (the user,
+    # 2026-11-24: «уже сделал сколько надо ходов, а позиция не заканчивается»)
     sr["misses"] += not result["ok"]
     p["answers"].append({"ok": result["ok"], "threats": needed,
                          "found": len(result["found"]), "extra": len(result["extra"]), "ms": ms, "own": True})

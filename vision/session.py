@@ -18,7 +18,9 @@ from . import events, store, threats
 THREAT_SOURCES = {"own": 0.25, "db": 0.1, "missed": 0.3, "puzzle": 0.35}
 QUIET_SOURCES = {"own": 0.4, "db": 0.6}
 SOURCE_NAME = {"own": "твоя партия", "db": "чужая партия", "puzzle": "задача Lichess", "missed": "зевок в партии"}
-SHARE = 0.6  # series that start on a position with a threat
+SHARE = 0.6  # series that start on a position with something to find
+# …his threat there, or a chance of yours (a Lichess puzzle from the solver's side has its blow to find)
+SHARP = "(n_threats > 0 OR source = 'puzzle' OR json_array_length(answer, '$.chances') > 0)"
 ABOVE = 25  # the difficulty aimed at: the rating plus this (a right answer a little less than half the time)
 CANDIDATES = 40  # new positions of a source compared by difficulty for one pick
 MOTIF_NAME = {

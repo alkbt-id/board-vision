@@ -1,9 +1,10 @@
-"""Lichess puzzles turned around (database CC0, https://database.lichess.org/#puzzles).
+"""Lichess puzzles from the solver's side (database CC0, https://database.lichess.org/#puzzles).
 
-A Lichess puzzle row: FEN before the opponent's mistake, Moves = the mistake, then the winning line. Here the
-position after the mistake is the "before", the winning blow is the opponent's move, and the user plays the side
-that made the mistake: right after the blow he has to see what is now attacked. Only positions where the blow is
-not a check (a check is no drill) and the rule finds a threat are kept. The puzzle's theme becomes the motif.
+A Lichess puzzle row: FEN before the opponent's mistake, Moves = the mistake, then the winning line. The drill
+position is just that: the opponent's mistake is his move, and the user plays the solver — the winning blow is his
+to see in step 1 («Что у него висит?»: a chance), and the position is won, not lost (the user, 2026-11-24: no lost
+positions; the puzzles used to be turned around, the user sitting on the side already hit). Positions where the
+solver is in check after the mistake are left out. The puzzle's theme becomes the motif.
 """
 
 import csv
@@ -42,14 +43,13 @@ def run() -> None:
                 continue
             board = chess.Board(fen)
             line = [chess.Move.from_uci(u) for u in moves.split()]
-            board.push(line[0])
-            blow = line[1]
+            mistake = line[0]
         except ValueError, IndexError:
             continue
         theme_set = set(themes.split())
         motif = next((t for t in MOTIFS if t in theme_set), "")
-        n = add_position(board, blow, "puzzle", pid, ply=0, motif=motif, rating=int(rating), need_threat=True)
-        if n:
+        n = add_position(board, mistake, "puzzle", pid, ply=0, motif=motif, rating=int(rating))
+        if n is not None:
             kept += 1
             if kept % 200 == 0:
                 say(f"задачи Lichess: взято {kept}")

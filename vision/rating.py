@@ -26,6 +26,7 @@ describe in «Невидимые шахматные ходы» and what the rese
                 for answers that were asked for it), each one beyond the first adds to «more»
   fork          a check that wins material, his or yours (the engine's, since 2026-11-24, for answers asked for it)
   mate_long     a forced mate in 2–3, his or yours (likewise)
+  checks        each of his checks after your move, up to 3 (to be marked since 2026-11-24: hard to see)
 The check of your own move («проверь свой ход», vision/play.commit) is scored on the same scale with its own points:
   own           it is your own move: the position after it has to be imagined (+100)
   attack        a fork or a new attack on your queen to see, not only a capture (+150)
@@ -50,7 +51,7 @@ ETA = 4  # how fast the difficulty points learn
 WEIGHTS = {
     "threat": 300, "more": 100, "discovered": 150, "old": 100, "backward": 100, "horizontal": 75, "long": 50,
     "knight": 50, "exchange": 150, "mate": 50, "promotion": 100, "decoys": 100, "own": 100, "attack": 150,
-    "chance": 200, "fork": 200, "mate_long": 250,
+    "chance": 200, "fork": 200, "mate_long": 250, "checks": 80,
 }
 
 
@@ -96,10 +97,12 @@ def features(fen: str, move_uci: str, answer: dict) -> dict[str, float]:
 
 def features_own(answer: dict) -> dict[str, float]:
     """What makes the check of your own move hard (see the module doc)."""
-    # his plain checks (asked since 2026-11-24) are not what makes a position hard: left out of the difficulty
     found = [t for t in answer.get("threats") or [] if not t.get("optional") and t.get("kind") != "check"]
+    checks = sum(1 for t in answer.get("threats") or [] if t.get("kind") == "check")
     attacks = answer.get("attacks") or []
     f: dict[str, float] = {"own": 1.0}
+    if checks:  # his checks are hard to see (the user, 2026-11-24: «видеть шахи сложно.. учитывай их в рейтинге»)
+        f["checks"] = float(min(3, checks))
     if not found and not attacks:
         f["decoys"] = float(min(2, len(answer.get("defended") or [])))
         return f

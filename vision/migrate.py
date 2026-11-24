@@ -98,3 +98,25 @@ def run() -> None:
     rating.clear_cache()
     events.log("rule_update", version=RULE_VERSION, items=items, items_changed=changed, answers=rescored,
                now_right=to_ok, now_wrong=to_wrong)
+
+
+def sources_v2() -> None:
+    """Once (2026-11-24, the user: no lost positions): the turned-around Lichess puzzles are set aside (source
+    «puzzle_old») and read again from the solver's side (vision/sources/puzzles.py); the real misses where the threat
+    could not be parried — the player lost with best play — are set aside too («missed_lost»). Set aside, not deleted:
+    past answers keep their positions."""
+    if store.meta_get("sources_v2") == "1":
+        return
+    from . import engine
+    store.run("UPDATE items SET source = 'puzzle_old' WHERE source = 'puzzle'")
+    store.meta_set("puzzle_rows", "0")
+    lost = 0
+    for r in store.q("SELECT id, fen, move FROM items WHERE source = 'missed'"):
+        after = chess.Board(r["fen"])
+        after.push(chess.Move.from_uci(r["move"]))
+        e = engine.evaluate(after, after.turn)
+        if e is not None and e < -300:
+            store.run("UPDATE items SET source = 'missed_lost' WHERE id = ?", (r["id"],))
+            lost += 1
+    store.meta_set("sources_v2", "1")
+    events.log("sources_v2", puzzles="set aside, read again from the solver's side", missed_lost=lost)
