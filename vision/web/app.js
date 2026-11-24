@@ -116,7 +116,18 @@ function setArrows(list) {
 // chessground's own right-button drawing: compare with the known arrows; a new arrow over an existing line
 // (the same one reversed) takes that line off; circles are dropped (only arrows count)
 function syncArrows(shapes, how) {
-  if (!drawingNow()) { cg.setShapes(S.reviewShapes || []); return; } // a right click outside drawing changes nothing
+  if (!drawingNow()) {
+    // the review before your move: a right-button arrow starts your move at once
+    if (S.phase === "review" && S.review?.toPlan) {
+      const was = S.reviewShapes || [];
+      const drawn = shapes.find((s) => s.dest && s.orig !== s.dest && !was.some((p) => p.orig === s.orig && p.dest === s.dest));
+      planFromReview("mouse-right");
+      if (drawn) tryMove(drawn.orig, drawn.dest, how);
+      return;
+    }
+    cg.setShapes(S.reviewShapes || []); // a right click outside drawing changes nothing
+    return;
+  }
   // your move drawn again (chessground took the blue arrow off or recoloured it): take the move back
   if (S.phase === "plan" && myMove && !shapes.some((s) => s.brush === "blue")) { rethink(); return; }
   let now = shapes.filter((s) => s.dest && s.orig !== s.dest && s.brush !== "blue").map((s) => ({ from: s.orig, to: s.dest }));
@@ -214,7 +225,7 @@ wrap.addEventListener("pointerdown", (e) => {
   if (e.pointerType === "mouse" && e.button !== 0) return; // the right button: chessground
   e.preventDefault();
   e.stopPropagation();
-  if (!drawingNow()) return;
+  if (!drawingNow() && !planFromReview(e.pointerType)) return;
   drag.from = keyAt(e.clientX, e.clientY);
   drag.id = e.pointerId;
   drag.moved = false;
@@ -565,7 +576,9 @@ function playShow(v) {
   cg.setAutoShapes([]);
   if (v.new_series) S.marks = [];
   if (!v.bot) return playStep(v);
-  S.waitText = v.new_series ? "Соперник ходит…" : "Бот ходит…";
+  const note = S.note || "";
+  S.note = "";
+  S.waitText = note || (v.new_series ? "Соперник ходит…" : "Бот ходит…");
   S.phase = "wait";
   if (v.new_series) {
     cg.set({ animation: { enabled: false } });
@@ -577,7 +590,7 @@ function playShow(v) {
     cg.set({ fen: v.fen, lastMove: [v.bot.move.slice(0, 2), v.bot.move.slice(2, 4)], turnColor: v.orientation, check: !!v.check });
     play(v.bot.capture ? "Capture" : "Move");
     setTimeout(() => { if (S.v === v) playStep(v); }, 280);
-  }, v.new_series ? 450 : 400);
+  }, (v.new_series ? 450 : 400) + (note ? 900 : 0));
 }
 function playStep(v) {
   if (v.phase === "check") return startDrawing(null);
@@ -623,6 +636,7 @@ async function commitMove() {
   const auto = [];
   for (const t of v.own.threats) if (!found.has(t.target)) auto.push(...missedArrows(t, true));
   for (const at of v.own.attacks) if (!found.has(at.key)) auto.push(marked({ orig: at.moves[0].from, dest: at.moves[0].to, brush: "red" }, "miss"));
+  if (res.ok) return goOn(v); // all seen: the bot answers at once
   S.reviewShapes = user;
   cg.setShapes(user);
   cg.setAutoShapes(auto);
@@ -662,9 +676,32 @@ async function check() {
   const r = { result: v.result, threats: v.threats };
   if (v.phase === "plan") {
     const hints = v.threats.flatMap((t) => missedArrows(t, false, "paleOrange"));
-    return showReview(r, () => { log("next_click", { ms: ms(), to: "plan" }); startPlan(v, hints); });
+    if (v.result.ok) return startPlan(v, hints); // all found: no stop, your move at once
+    const toPlan = (how) => { log("next_click", { ms: ms(), to: "plan", how }); startPlan(v, hints); };
+    showReview(r, () => toPlan("button"));
+    S.review.toPlan = toPlan;
+    return;
   }
+  if (v.result.ok) return goOn(v);
   seriesEnd(v, () => showReview(r, nextSeries));
+}
+// a clean check is not stopped on: its dot fills and the game goes on (a new series says its length in the strip);
+// only a check with a mistake stops for the review
+function goOn(v) {
+  S.note = seriesNote(v);
+  nextSeries("auto");
+}
+function seriesNote(v) {
+  const e = v.series_end;
+  if (!e || !(e.length > 1 || e.next_level !== e.level_was)) return "";
+  const mark = e.next_level > e.level_was ? "▲" : e.next_level < e.level_was ? "▼" : "↻";
+  return `${e.clean ? "Серия пройдена" : "Серия с промахом"} · ${mark} ${e.next_level}`;
+}
+// the review before your move: drawing on the board starts your move at once — «Дальше» is not needed first
+function planFromReview(how) {
+  if (S.phase !== "review" || !S.review?.toPlan) return false;
+  S.review.toPlan(`draw-${how}`);
+  return true;
 }
 // the end of a series: the review (if any) and, in the strip, the next length (▲ longer, ▼ shorter, ↻ the same)
 function seriesEnd(v, review) {
@@ -684,9 +721,9 @@ function seriesEnd(v, review) {
   }
   syncMode();
 }
-async function nextSeries() {
+async function nextSeries(how = "button") {
   if (S.phase !== "review") return;
-  log("next_click", { ms: ms() });
+  log("next_click", { ms: ms(), how: typeof how === "string" ? how : "button" });
   S.reviewShapes = null;
   bm.btn.disabled = true;
   bmAction = null;
