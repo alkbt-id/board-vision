@@ -347,9 +347,6 @@ function syncMode() {
   wrap.classList.toggle("mode-threats", kind === "threats");
   wrap.classList.toggle("mode-move", kind === "move");
   wrap.classList.toggle("mode-chances", kind === "chances");
-  const prog = $("#sit-prog");
-  prog.hidden = !S.sid || !S.v?.budget;
-  if (!prog.hidden) prog.firstElementChild.style.width = `${Math.min(1, (S.v.checks || 0) / S.v.budget) * 100}%`;
 }
 bm.btn.addEventListener("click", () => { if (bmAction && !bm.btn.disabled) bmAction(); });
 bm.undo.addEventListener("click", () => undoArrow());
@@ -516,7 +513,7 @@ function lineChart(el, pts, o) {
     tip.hidden = false;
     tip.textContent = "";
     const v = document.createElement("b"); v.textContent = o.fmt(p[o.key]);
-    const sub = document.createElement("span"); sub.textContent = `${fmtDate(p.ts)} · ${p.n} поз.`;
+    const sub = document.createElement("span"); sub.textContent = fmtDate(p.ts);
     tip.append(v, sub);
     const left = Math.min(Math.max(0, (x(best) / W) * r.width - 50), r.width - 110);
     tip.style.left = `${left}px`;
@@ -528,11 +525,11 @@ function drawCharts() {
   const c1 = $("#ch-rating"), c2 = $("#ch-time");
   if (!c1) return;
   if (pts.length < 2) {
-    c1.innerHTML = `<p class="muted">График появится после двух сессий.</p>`;
+    c1.innerHTML = `<p class="muted">График появится после двух позиций.</p>`;
     if (c2) c2.textContent = "";
     return;
   }
-  lineChart(c1, pts, { key: "rating", height: 150, title: "По сессиям", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
+  lineChart(c1, pts, { key: "rating", height: 150, title: "По позициям", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
   const tp = pts.filter((p) => p.median_s != null);
   if (c2 && tp.length > 1) lineChart(c2, tp, { key: "median_s", height: 80, title: "Секунд на позицию", fmt: (v) => String(Math.round(v)), minSpan: 6, step: 2, floor: 0 });
 }
@@ -575,7 +572,7 @@ async function showStart() {
   cg.setAutoShapes([]);
   await loadProgress();
   panel.innerHTML = `
-    ${heroHTML("за последнюю сессию")}
+    ${heroHTML("за последнюю позицию")}
     <div class="chart" id="ch-rating"></div>
     <div class="chart" id="ch-time"></div>
     <button class="btn primary big" id="go" disabled>Начать</button>

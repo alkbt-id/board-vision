@@ -1,6 +1,8 @@
 """The one training mode: series of checks, one game fragment each, getting longer as the user gets them right.
 
-A sitting has about 15 checks. It is made of series; a series of length L is a fragment of a game with L checks:
+A sitting goes on series after series until the user leaves (✕): no count of checks and no summary (the user,
+2026-11-24: «а нафига нам 15 проверок вообще?», «зачем нам вообще итог? … сразу начинай следующую серию»);
+a series of length L is a fragment of a game with L turns:
   1. a position from the pool (vision/sources: the user's games, other people's, Lichess puzzles turned around, or
      a position due for a repeat) and the opponent's real move in it — the first check;
   A series with moves (L > 1) starts only where the user's side is not lost with best play (Stockfish, NOT_LOST)
@@ -11,8 +13,8 @@ A sitting has about 15 checks. It is made of series; a series of length L is a f
      answers; then check again — until L checks of the bot's moves are done or the game ends.
 L is the user's level (meta series_length, starts at 1): a series without a miss (in either kind of check) makes it
 one longer (max 30), two missed series in a row make it one shorter (min 1). So at level 1 it is the plain «one position, one move» drill.
-The first position of each series follows the old mix: repeats first (up to 30% of a sitting), then positions with a
-threat or quiet ones by vision/session.threat_share(); the window gets no hint of the kind or the source.
+The position of a series: a due repeat in REPEAT_SHARE of series, else a position with a threat or a quiet one by
+vision/session.threat_share(); the window gets no hint of the kind or the source.
 
 Every check is an answer in `attempts` (the first one on the pool position, later ones on positions stored with
 source "series"), so all of them count in the attention rating and the repeat ladder.
@@ -49,9 +51,9 @@ def _side(color: chess.Color) -> str:
 
 
 def _pick_start(p: dict) -> dict:
-    """The first position of the next series: a due repeat (while repeats stay under 30% of the sitting), else a
-    position with a threat or a quiet one by the current share."""
-    if p["repeats"] < round(CHECKS * REPEAT_SHARE):
+    """The first position of the next series: a due repeat (in REPEAT_SHARE of the picks), else a position with a
+    threat or a quiet one by the current share."""
+    if random.random() < REPEAT_SHARE:
         due = store.q("SELECT s.item FROM schedule s JOIN items i ON i.id = s.item WHERE s.due <= ? AND i.source != 'ownmove'"
                       " ORDER BY s.due LIMIT 20", (store.now_ms(),))
         for r in due:
@@ -223,7 +225,7 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
         row = store.q("SELECT id FROM items WHERE key = ?", (f"series|{p['last']['fen']}|{p['last']['move']}",))
         item_id = row[0]["id"] if row else None
     if item_id is not None:
-        store.record(item_id, pid, ms, result["n"], result, arrows)
+        store.record(item_id, pid, ms, result["n"], result, arrows, series=p["series_no"])
         if key.get("engine"):  # the position now carries its tactics (for its difficulty and its next showing)
             store.run("UPDATE items SET answer=?, n_threats=? WHERE id=?",
                       (json.dumps(key, ensure_ascii=False), len(key["threats"]), item_id))
@@ -245,7 +247,7 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
     else:
         p["phase"] = "plan"
     if p["phase"] == "next":
-        extra["last"] = p["checks"] >= CHECKS
+        extra["last"] = False  # the sitting goes on until the user leaves
     return _view(p, extra)
 
 
@@ -283,7 +285,8 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
                    ply=len(board.move_stack))
     row = store.q("SELECT id FROM items WHERE key = ?", (f"ownmove|{before_fen}|{mv.uci()}",))
     if row:
-        store.record(row[0]["id"], pid, ms, len(key["threats"]) + len(key["attacks"]), result, arrows)
+        store.record(row[0]["id"], pid, ms, len(key["threats"]) + len(key["attacks"]), result, arrows,
+                     series=p["series_no"])
     sr = p["series"]
     p["checks"] += 1
     sr["own"] += 1
@@ -297,7 +300,7 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
     if board.is_game_over() or sr["checks"] >= sr["length"]:  # the last turn of the series: no bot move after it
         p["phase"] = "next"
         extra["series_end"] = _end_series(p, game_over=board.is_game_over())
-        extra["last"] = p["checks"] >= CHECKS
+        extra["last"] = False  # the sitting goes on until the user leaves
     else:
         p["phase"] = "bot"
     return _view(p, extra)
@@ -309,13 +312,11 @@ def next_series(pid: str) -> dict:
     if p["phase"] == "bot":
         extra = _bot_turn(p)
         if p["phase"] == "next":
-            extra["last"] = p["checks"] >= CHECKS
+            extra["last"] = False
         return _view(p, extra)
     if p["phase"] != "next":
         raise ValueError("серия ещё идёт")
-    if p["checks"] >= CHECKS:
-        return {"play": pid, "phase": "over", "summary": finish(pid)}
-    return _new_series(p)
+    return _new_series(p)  # the next one at once: the sitting ends when the user leaves
 
 
 def finish(pid: str) -> dict:
@@ -325,7 +326,7 @@ def finish(pid: str) -> dict:
     ans = p["answers"]
     done = p["series_done"]
     summary = {
-        "checks": len(ans), "ok": sum(1 for a in ans if a["ok"]),
+        "checks": len(ans), "ok": sum(1 for a in ans if a["ok"]), "series_end": done[-1] if done else None,
         "series": len(done), "clean": sum(1 for s in done if s["clean"]),
         "level": p["level"], "best": best(),
         "median_ms": int(sorted(a["ms"] for a in ans)[len(ans) // 2]) if ans else 0,

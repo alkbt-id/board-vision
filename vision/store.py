@@ -52,6 +52,10 @@ def db() -> sqlite3.Connection:
             _db.row_factory = sqlite3.Row
             _db.execute("PRAGMA journal_mode=WAL")
             _db.executescript(SCHEMA)
+            try:  # the series of a sitting an answer belongs to (2026-11-24: the chart has a point per series)
+                _db.execute("ALTER TABLE attempts ADD COLUMN series INTEGER")
+            except sqlite3.OperationalError:
+                pass  # there already
         return _db
 
 
@@ -116,14 +120,15 @@ def meta_set(key: str, value: str) -> None:
     run("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
 
 
-def record(item_id: int, session: str, ms: int, n_threats: int, result: dict, arrows: list) -> None:
+def record(item_id: int, session: str, ms: int, n_threats: int, result: dict, arrows: list,
+           series: int | None = None) -> None:
     """An answer, and the repeat ladder: a missed threat (or a false alarm on a quiet position) brings the
     position back tomorrow; a right answer on a scheduled position moves it up the ladder, off after the last step."""
     ok = bool(result["ok"])
-    run("INSERT INTO attempts (item, session, ts, ms, n_threats, found, missed, extra, ok, arrows, result)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    run("INSERT INTO attempts (item, session, ts, ms, n_threats, found, missed, extra, ok, arrows, result, series)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (item_id, session, now_ms(), ms, n_threats, len(result["found"]), len(result["missed"]), len(result["extra"]),
-         int(ok), json.dumps(arrows), json.dumps(result, ensure_ascii=False)))
+         int(ok), json.dumps(arrows), json.dumps(result, ensure_ascii=False), series))
     rows = q("SELECT step FROM schedule WHERE item=?", (item_id,))
     if not ok:
         run("INSERT INTO schedule (item, step, due) VALUES (?, 0, ?)"

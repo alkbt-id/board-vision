@@ -195,7 +195,8 @@ def replay() -> list[dict]:
     """Every first-time answer in order, with the rating after it: [{session, ts, rating, difficulty, score, ms}].
     The difficulty points learn along the way, so the whole history is replayed from the start each time."""
     rows = store.q(
-        "SELECT a.session, a.ts, a.ms, a.n_threats, a.found, a.extra, a.result, i.id AS item, i.fen, i.move, i.answer,"
+        "SELECT a.session, a.series, a.ts, a.ms, a.n_threats, a.found, a.extra, a.result, i.id AS item, i.fen, i.move,"
+        " i.answer,"
         " i.source"
         " FROM attempts a JOIN items i ON i.id = a.item"
         " WHERE a.id = (SELECT MIN(b.id) FROM attempts b WHERE b.item = a.item) ORDER BY a.ts")
@@ -214,7 +215,8 @@ def replay() -> list[dict]:
         rating += K * (s - e)
         for k, v in f.items():  # missed more than expected -> this kind is harder than thought
             w[k] = w.get(k, 0) + ETA * (e - s) * v
-        out.append({"session": r["session"], "ts": r["ts"], "rating": rating, "difficulty": diff, "score": s,
+        out.append({"session": r["session"], "series": r["series"], "ts": r["ts"], "rating": rating, "difficulty": diff,
+                    "score": s,
                     "ms": r["ms"]})
     _last.update(rating=rating, weights=dict(w))
     return out

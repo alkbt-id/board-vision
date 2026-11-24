@@ -100,20 +100,23 @@ def _score(rows: list) -> dict:
             "threat_ok": sum(t), "threat_n": len(t), "quiet_ok": sum(q), "quiet_n": len(q)}
 
 
-def progress(limit: int = 40) -> dict:
-    """The chart: the attention rating after each session (vision/rating.py) and the median seconds per position.
+def progress(limit: int = 60) -> dict:
+    """The chart: the attention rating after each played-out position — a series (the user, 2026-11-24: «просто
+    пересчитывай после каждой позиции»); answers from before series were stored count per session.
     {"start": 1500, "rating": current, "points": [{session, ts, rating, n, median_s}, ...] oldest first}."""
     from . import rating
 
     by: dict[str, dict] = {}
     for r in rating.replay():
-        p = by.setdefault(r["session"], {"session": r["session"], "ts": r["ts"], "n": 0, "ms": []})
+        key = f"{r['session']}/{r['series']}" if r.get("series") is not None else r["session"]
+        p = by.setdefault(key, {"session": key, "ts": r["ts"], "n": 0, "ms": [], "min": 1 if "/" in key else 3})
         p["rating"] = round(r["rating"])
         p["n"] += 1
         if r["ms"]:
             p["ms"].append(r["ms"])
-    points = sorted((p for p in by.values() if p["n"] >= 3), key=lambda p: p["ts"])  # a sitting of 1–2 answers is noise
+    points = sorted((p for p in by.values() if p["n"] >= p["min"]), key=lambda p: p["ts"])  # an old sitting of 1–2 answers is noise
     for p in points:
+        p.pop("min")
         ms = p.pop("ms")
         p["median_s"] = round(statistics.median(ms) / 1000, 1) if ms else None
     return {"start": rating.START, "rating": points[-1]["rating"] if points else rating.START, "points": points[-limit:]}

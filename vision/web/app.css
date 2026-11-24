@@ -174,8 +174,6 @@ details.rules p { margin: 8px 0 0; }
 .top { position: relative; }
 .top-left { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .top-left .ibtn { margin-left: -8px; }
-.sit-prog { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; }
-.sit-prog i { display: block; height: 100%; width: 0; background: var(--chart); border-radius: 0 2px 2px 0; transition: width .3s; }
 
 /* ---------- while you play the side panel goes away: only the board and the strip over it ---------- */
 .app.playing .side { display: none; }
