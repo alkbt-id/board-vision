@@ -411,10 +411,13 @@ def own_move(before: chess.Board, move: chess.Move) -> dict:
         return {"threats": [], "attacks": [], "defended": [], "exchanges": {}}
     key = opponent_key(b)
     if before.is_capture(move) and not before.is_en_passant(move) and capture_gain(before, move) >= 0:
-        # your capture starts an exchange you do not lose: his taking back there is its second half, not a threat
-        # (the user, 2026-11-24, after Bxh4 gxh4 Qxh4: «я взял слоном коня!»)
+        # your capture starts an exchange you do not lose: his taking back there is its second half — not a miss when
+        # you leave it out («я взял слоном коня!» after Bxh4 gxh4 Qxh4), right when you draw it («на d3 явно стрелки
+        # нужны после моего хода взятия пешкой», 2026-11-24): an optional item
         to = chess.square_name(move.to_square)
-        key["threats"] = [t for t in key["threats"] if t["target"] != to or t["mate"]]
+        for t in key["threats"]:
+            if t["target"] == to and not t["mate"]:
+                t["optional"] = True
     key["attacks"] = []
     return key
 
@@ -512,7 +515,7 @@ def check_own(key: dict, arrows: list[dict], board: chess.Board) -> dict:
             continue
         why = "defended" if (b in key["defended"] or a in key["defended"]) else "not_attacked"
         extra.append({"from": a, "to": b, "why": why})
-    missed = [t["target"] for t in key["threats"] if t["target"] not in found]
+    missed = [t["target"] for t in key["threats"] if t["target"] not in found and not t.get("optional")]
     missed_a = [at["key"] for at in key["attacks"] if at["key"] not in found_a]
     items = [{"target": t["target"], "found": t["target"] in found, "text": describe(t, board),
               "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in key["threats"]]

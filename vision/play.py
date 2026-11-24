@@ -224,6 +224,7 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
                        ref=pid, ply=len(board.move_stack))
         row = store.q("SELECT id FROM items WHERE key = ?", (f"series|{p['last']['fen']}|{p['last']['move']}",))
         item_id = row[0]["id"] if row else None
+    p["turn_item"] = item_id  # a miss after your move brings this position back as a repeat (vision/play.commit)
     if item_id is not None:
         store.record(item_id, pid, ms, result["n"], result, arrows, series=p["series_no"])
         if key.get("engine"):  # the position now carries its tactics (for its difficulty and its next showing)
@@ -280,18 +281,20 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
             item["line"] = threats.recapture_line(board, reply, engine.best_move)  # a «fair» trade that is not
             key["attacks"].append(item)
     result = threats.check_own(key, arrows, board)
+    needed = len([t for t in key["threats"] if not t.get("optional")]) + len(key["attacks"])
     side = "w" if p["user"] == chess.WHITE else "b"
     store.add_item("ownmove", before_fen, mv.uci(), side, {**key, "threats": key["threats"]}, ref=pid,
                    ply=len(board.move_stack))
     row = store.q("SELECT id FROM items WHERE key = ?", (f"ownmove|{before_fen}|{mv.uci()}",))
     if row:
-        store.record(row[0]["id"], pid, ms, len(key["threats"]) + len(key["attacks"]), result, arrows,
-                     series=p["series_no"])
+        store.record(row[0]["id"], pid, ms, needed, result, arrows, series=p["series_no"])
+    if not result["ok"] and p.get("turn_item"):
+        store.schedule_again(p["turn_item"])  # the position of this turn comes back tomorrow
     sr = p["series"]
     p["checks"] += 1
     sr["own"] += 1
     sr["misses"] += not result["ok"]
-    p["answers"].append({"ok": result["ok"], "threats": len(key["threats"]) + len(key["attacks"]),
+    p["answers"].append({"ok": result["ok"], "threats": needed,
                          "found": len(result["found"]), "extra": len(result["extra"]), "ms": ms, "own": True})
     events.log("own_check", session=pid, san=san, uci=mv.uci(), ok=result["ok"], found=result["found"],
                missed=result["missed"], extra=result["extra"], arrows=arrows, ms=ms, series=p["series_no"])

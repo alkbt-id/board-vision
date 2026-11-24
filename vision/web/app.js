@@ -350,15 +350,16 @@ function syncMode() {
 }
 bm.btn.addEventListener("click", () => { if (bmAction && !bm.btn.disabled) bmAction(); });
 bm.undo.addEventListener("click", () => undoArrow());
-// the series: per turn a circle (his pieces you can win) and a square (his threats after your move)
+// the series: a dot a turn — filled when everything of the turn was right (the user, 2026-11-24: «очередность
+// кажется лишней.. теперь фактически я только на своем ходу оцениваю»)
 function dots() {
   const v = S.v;
   if (!S.sid || !v?.series) return { html: "", n: 0, done: 0 };
-  const n = 2 * v.series.length, marks = S.marks || [], active = S.phase !== "review";
+  const n = v.series.length, marks = S.marks || [], active = S.phase !== "review";
   let html = "";
   for (let i = 0; i < n; i++) {
     const cls = i < marks.length ? (marks[i] ? "ok" : "miss") : i === marks.length && active ? "now" : "todo";
-    html += `<i class="dot ${cls}${i % 2 ? " own" : ""}"></i>`;
+    html += `<i class="dot ${cls}"></i>`;
   }
   return { html, n, done: marks.length };
 }
@@ -744,7 +745,7 @@ async function commitMove() {
   S.v = v;
   const pc = S.pendingChance; // step 1 of this turn: his pieces you could win
   S.pendingChance = null;
-  S.marks = [...(S.marks || []), ...(pc ? [!!pc.result.ok] : []), !!v.own.result.ok];
+  S.marks = [...(S.marks || []), (!pc || !!pc.result.ok) && !!v.own.result.ok]; // one dot a turn: both steps right
   myMove = null;
   arrows = [];
   wrap.classList.add("locked");
@@ -758,7 +759,8 @@ async function commitMove() {
     return marked({ orig: a.from, dest: a.to, brush: extra ? "grey" : "green" }, extra ? "extra" : "ok");
   });
   const auto = [];
-  for (const t of v.own.threats) if (!found.has(t.target)) auto.push(...missedArrows(t, true));
+  // his taking back where you have just taken (optional): pale, from every piece that can, never a miss
+  for (const t of v.own.threats) if (!found.has(t.target)) auto.push(...(t.optional ? missedArrows(t, false, "paleOrange") : missedArrows(t, true)));
   for (const at of v.own.attacks) if (!found.has(at.key)) auto.push(...attackShapes(at));
   // step 1: your circles (✓ / ✕ in the corner) and the pieces of his you could have won, red with !
   const pr = pc?.result, pFound = new Set(pr?.found || []);
@@ -772,7 +774,7 @@ async function commitMove() {
   S.reviewShapes = shapes;
   cg.setShapes(shapes);
   cg.setAutoShapes(auto);
-  const n = v.own.threats.length + v.own.attacks.length + (pr?.n || 0);
+  const n = v.own.threats.filter((t) => !t.optional).length + v.own.attacks.length + (pr?.n || 0);
   const all = { ok: false, missed: [...res.missed, ...(pr?.missed || [])], extra: [...res.extra, ...(pr?.extra || [])] };
   const review = () => { S.review = { kind: "fail", text: verdict(all, n), label: "Дальше", onNext: nextSeries }; };
   if (v.phase === "next") return seriesEnd(v, review);

@@ -12,6 +12,8 @@ History:
   5  the check of your own move: when your move takes and the exchange there does not lose for you, his taking back
      is not a threat (2026-11-24: Bxh4 gxh4 Qxh4 was marked as «missed»). Own-move positions are checked again too,
      keeping the engine's tactics they carry
+  6  the same taking back is optional: drawn it is right, left out it is no miss (2026-11-24: «на d3 явно стрелки
+     нужны после моего хода взятия пешкой»)
 The engine's tactics (forced mates in 2–3, winning checks: threats.add_tactics) are not the rule's: a position keeps
 the ones it has when its key is computed again, and an answer is checked with them only if it was asked for them
 (its stored result has "tactics": true).
@@ -23,7 +25,7 @@ import chess
 
 from . import events, store, threats
 
-RULE_VERSION = "5"
+RULE_VERSION = "6"
 
 
 def _own_moves() -> int:
@@ -46,7 +48,8 @@ def _own_moves() -> int:
         for a in store.q("SELECT id, arrows FROM attempts WHERE item=?", (row["id"],)):
             res = threats.check_own(key, json.loads(a["arrows"] or "[]"), after)
             store.run("UPDATE attempts SET n_threats=?, found=?, missed=?, extra=?, ok=?, result=? WHERE id=?",
-                      (len(key["threats"]) + len(key["attacks"]), len(res["found"]), len(res["missed"]),
+                      (len([t for t in key["threats"] if not t.get("optional")]) + len(key["attacks"]),
+                       len(res["found"]), len(res["missed"]),
                        len(res["extra"]), int(res["ok"]), json.dumps(res, ensure_ascii=False), a["id"]))
             n += 1
     return n

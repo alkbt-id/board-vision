@@ -269,7 +269,14 @@ def test_taking_back_after_your_own_fair_capture_is_not_a_threat():
     # the user's game 2026-11-24: Bxh4 (a knight), and gxh4 Qxh4 leaves him a pawn up — not a «missed» threat
     before = chess.Board("r1bqk1nr/ppp1bppp/2n5/3p4/4p2N/3P2P1/PPP1PPBP/RNBQ1RK1 b kq - 0 1")
     key = threats.own_move(before, chess.Move.from_uci("e7h4"))
-    assert [t["target"] for t in key["threats"]] == ["e4"]
+    assert [t["target"] for t in key["threats"] if not t.get("optional")] == ["e4"]
+    after = before.copy()
+    after.push_uci("e7h4")
+    key["attacks"] = []
+    left_out = threats.check_own(key, [{"from": "d3", "to": "e4"}], after)
+    assert left_out["ok"]  # gxh4 is no miss…
+    drawn = threats.check_own(key, [{"from": "d3", "to": "e4"}, {"from": "g3", "to": "h4"}], after)
+    assert drawn["ok"] and "h4" in drawn["found"]  # …and drawn it is right, not extra
     # a capture that loses the exchange keeps the threat: the queen takes a pawn defended by a pawn
     before = chess.Board("4k3/8/2p5/3p4/8/8/3Q4/4K3 w - - 0 1")
     key = threats.own_move(before, chess.Move.from_uci("d2d5"))

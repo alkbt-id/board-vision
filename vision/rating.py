@@ -96,7 +96,7 @@ def features(fen: str, move_uci: str, answer: dict) -> dict[str, float]:
 
 def features_own(answer: dict) -> dict[str, float]:
     """What makes the check of your own move hard (see the module doc)."""
-    found = answer.get("threats") or []
+    found = [t for t in answer.get("threats") or [] if not t.get("optional")]
     attacks = answer.get("attacks") or []
     f: dict[str, float] = {"own": 1.0}
     if not found and not attacks:
