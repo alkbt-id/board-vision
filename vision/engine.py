@@ -74,6 +74,23 @@ def refutation(before: chess.Board, move: chess.Move) -> tuple[chess.Move, int] 
     return pv[0], best - now
 
 
+def evaluate(board: chess.Board, pov: chess.Color) -> int | None:
+    """Stockfish's evaluation of `board` for `pov` in centipawns (a mate is ±10000); None without the engine."""
+    global _engine
+    if board.is_game_over():
+        return None
+    with _lock:
+        engine = _open()
+        if engine is None:
+            return None
+        try:
+            info = engine.analyse(board, LIMIT)
+        except chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError:
+            _engine = None
+            return None
+    return info["score"].pov(pov).score(mate_score=10_000)
+
+
 def close() -> None:
     global _engine
     with _lock:

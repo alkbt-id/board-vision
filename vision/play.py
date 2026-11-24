@@ -3,6 +3,8 @@
 A sitting has about 15 checks. It is made of series; a series of length L is a fragment of a game with L checks:
   1. a position from the pool (vision/sources: the user's games, other people's, Lichess puzzles turned around, or
      a position due for a repeat) and the opponent's real move in it — the first check;
+  A series with moves (L > 1) starts only where the user's side is not lost with best play (Stockfish, NOT_LOST)
+  and ends early when a bot move leaves it lost (LOST): traps and hard positions yes, lost ones no.
   2. if L > 1: the user draws his move as an arrow and, before it is played, the arrows of what the opponent can
      do after it («проверь свой ход»: what he can win at once by the capture rule, vision/threats.own_move, and a
      tactical reply Stockfish finds when the move loses material to it, vision/engine.py); «Хожу» checks that, plays the move, and the bot (Maia 1300, vision/bot.py)
@@ -28,6 +30,9 @@ from . import bot, engine, events, session, store, threats
 CHECKS = 15
 REPEAT_SHARE = 0.3
 MAX_LEVEL = 30
+NOT_LOST = -300  # a series (level 2+) starts only where your side, playing best, is not worse than this (cp)
+LOST = -500  # after the bot's move: your side is lost even with best play -> the series ends there
+TRIES = 8  # start positions tried before falling back to a single check
 PLAYS: dict[str, dict] = {}
 
 
@@ -87,16 +92,30 @@ def _view(p: dict, extra: dict | None = None) -> dict:
 
 
 def _new_series(p: dict) -> dict:
-    it = _pick_start(p)
-    p["used"].add(it["id"])
-    before = chess.Board(it["fen"])
-    move = chess.Move.from_uci(it["move"])
+    """The next series. With moves to play (level 2+) it starts only where your side is not lost with best play:
+    traps and hard positions yes, positions lost in advance (most turned-around puzzles: the blow has landed) no.
+    If none is found in TRIES picks, the last one is a single check that does not move the level."""
+    single = False
+    for attempt in range(TRIES):
+        it = _pick_start(p)
+        p["used"].add(it["id"])
+        before = chess.Board(it["fen"])
+        move = chess.Move.from_uci(it["move"])
+        board = before.copy()
+        board.push(move)
+        if p["level"] < 2:
+            break
+        e = engine.evaluate(board, board.turn)
+        if e is None or e >= NOT_LOST:
+            break
+        if it["repeat"]:
+            p["repeats"] -= 1  # still due: it comes back another time
+        if attempt == TRIES - 1:
+            single = True
     p["user"] = not before.turn
-    board = before.copy()
-    board.push(move)
     p["board"] = board
     p["series_no"] += 1
-    p["series"] = {"length": p["level"], "checks": 0, "own": 0, "misses": 0}
+    p["series"] = {"length": 1 if single else p["level"], "checks": 0, "own": 0, "misses": 0, "single": single}
     p["item"] = it["id"]  # the first check is answered on the pool position itself
     p["last"] = {"fen": it["fen"], "move": it["move"]}
     p["phase"] = "check"
@@ -128,8 +147,15 @@ def _bot_turn(p: dict) -> dict:
     p["item"] = None
     events.log("bot_move", series=p["id"], san=san, uci=mv.uci(), ms=int((time.time() - t0) * 1000), fen=before.fen())
     shown: dict = {"bot": {"before": before.fen(), "move": mv.uci(), "san": san, "capture": capture}}
+    lost = False
+    if not board.is_game_over():
+        e = engine.evaluate(board, board.turn)
+        lost = e is not None and e <= LOST
     if board.is_game_over():
         shown["series_end"] = _end_series(p, game_over=True)
+        p["phase"] = "next"
+    elif lost:  # no point playing on: the series ends here
+        shown["series_end"] = _end_series(p, lost=True)
         p["phase"] = "next"
     elif board.is_check():
         p["phase"] = "plan"  # answer the check (no threat check here: the check is the threat)
@@ -139,12 +165,16 @@ def _bot_turn(p: dict) -> dict:
     return shown
 
 
-def _end_series(p: dict, game_over: bool = False) -> dict:
+def _end_series(p: dict, game_over: bool = False, lost: bool = False) -> dict:
+    """The level moves: a clean series +1, the second missed one in a row -1. Neutral (no change): a single check
+    forced by a lack of playable starts, and a position that became lost without a miss of yours."""
     sr = p["series"]
     clean = sr["misses"] == 0 and sr["checks"] >= sr["length"]
     fails = int(store.meta_get("series_fails", "0") or 0)
     lvl = p["level"]
-    if clean:
+    if sr.get("single") or (lost and not sr["misses"]):
+        clean = False
+    elif clean:
         lvl, fails = min(MAX_LEVEL, lvl + 1), 0
         if sr["length"] > best():
             store.meta_set("series_best", str(sr["length"]))
@@ -155,7 +185,8 @@ def _end_series(p: dict, game_over: bool = False) -> dict:
     store.meta_set("series_length", str(lvl))
     store.meta_set("series_fails", str(fails))
     out = {"length": sr["length"], "checks": sr["checks"], "misses": sr["misses"], "clean": clean,
-           "game_over": game_over, "next_level": lvl, "level_was": p["level"]}
+           "game_over": game_over, "lost": lost, "single": bool(sr.get("single")), "next_level": lvl,
+           "level_was": p["level"]}
     p["level"] = lvl
     p["series_done"].append(out)
     events.log("series_end", series=p["id"], summary=out)

@@ -652,7 +652,7 @@ function seriesEnd(v, review) {
   if (e && (e.length > 1 || e.next_level !== e.level_was)) {
     const up = e.next_level > e.level_was, down = e.next_level < e.level_was;
     const n = e.next_level, word = plural(n, "ход", "хода", "ходов");
-    const title = e.clean ? "Серия пройдена!" : e.game_over ? "Партия окончена" : "Серия с промахом";
+    const title = e.clean ? "Серия пройдена!" : e.lost ? "Позиция проиграна — серия закончена" : e.game_over ? "Партия окончена" : "Серия с промахом";
     const sub = up ? `Дальше — ${n} ${word}` : down ? `Дальше — ${n} ${word}` : `Ещё раз ${n} ${word}`;
     panel.insertAdjacentHTML("beforeend", `<div class="series-end ${e.clean ? "up" : down ? "down" : "same"}">
       <span class="lvl">${up ? "▲" : down ? "▼" : "↻"} ${n}</span><span><b>${title}</b><span>${sub}</span></span></div>`);

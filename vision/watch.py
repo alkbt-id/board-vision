@@ -110,7 +110,7 @@ def line(e: dict) -> str | None:
         case "series_end":
             s = e.get("summary") or {}
             res = "без промахов" if s.get("clean") else f"промахов {s.get('misses')}"
-            over = " · партия окончена" if s.get("game_over") else ""
+            over = " · партия окончена" if s.get("game_over") else " · позиция проиграна" if s.get("lost") else ""
             return f"{t}   серия: {s.get('checks')}/{s.get('length')}, {res}{over} → длина {s.get('next_level')}"
         case "session_exit":
             return f"{t} ━━ вышел на главный экран на позиции {e.get('index', 0) + 1}/{e.get('size')} (отвечено {e.get('answered')})"
