@@ -592,7 +592,7 @@ async function commitMove() {
   const res = v.own.result, found = new Set(res.found);
   const user = drawn.map((a) => ({ orig: a.from, dest: a.to, brush: res.extra.some((x) => x.from === a.from && x.to === a.to) ? "grey" : "green" }));
   const auto = [];
-  for (const t of v.own.threats) if (!found.has(t.target)) auto.push({ orig: t.best.slice(0, 2), dest: t.target, brush: "red" });
+  for (const t of v.own.threats) if (!found.has(t.target)) auto.push(...missedArrows(t));
   for (const at of v.own.attacks) if (!found.has(at.key)) auto.push({ orig: at.moves[0].from, dest: at.moves[0].to, brush: "red" });
   S.reviewShapes = user;
   cg.setShapes(user);
@@ -609,6 +609,11 @@ async function commitMove() {
   panel.insertAdjacentHTML("beforeend", `<button class="btn primary big" id="next">Дальше</button>`);
   $("#next").addEventListener("click", nextSeries);
   $("#next").focus();
+}
+// a missed threat on the board: a red arrow from every piece that can take there (a mate: the mating move)
+function missedArrows(t) {
+  if (t.piece === null && t.mate) return [{ orig: t.best.slice(0, 2), dest: t.best.slice(2, 4), brush: "red" }];
+  return (t.attackers || [t.best.slice(0, 2)]).map((a) => ({ orig: a, dest: t.target, brush: "red" }));
 }
 // one row per item: the mark in its own column, the text (and the exchange in small print) next to it
 function reviewItems(res) {
@@ -679,7 +684,7 @@ function showReview(r, took, opt = {}) {
   const auto = [];
   for (const t of r.threats) {
     if (found.has(t.target)) auto.push({ orig: t.target, brush: "green" });
-    else auto.push({ orig: t.best.slice(0, 2), dest: t.target, brush: "red" });
+    else auto.push(...missedArrows(t));
   }
   S.reviewShapes = userShapes;
   cg.setShapes(userShapes);
