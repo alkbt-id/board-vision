@@ -271,7 +271,7 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
     board.push(mv)
     # his checks that win and his forced mates in 2–3 after your move, as the engine sees them — also when your move
     # is the best there is (a side note, 2026-11-24: an unavoidable fork marked right was counted as extra)
-    lines = engine.forcing(board, credit=took)  # what you have just taken is not his to «win» back
+    lines = engine.forcing(board, credit=took, quiet=True)  # what you have just taken is not his to «win» back
     if lines:
         key["threats"] += threats.tactic_items(board, lines, key["threats"], "he")
     if ref:

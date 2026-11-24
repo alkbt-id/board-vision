@@ -277,7 +277,8 @@ def tactic_items(board: chess.Board, lines: list[dict], known: list[dict], who: 
         out.append({"target": first.uci(), "targets": list(dict.fromkeys(targets)), "piece": None,
                     "attackers": [chess.square_name(first.from_square)], "best": first.uci(), "san": board.san(first),
                     "gain": 0, "mate": bool(ln["mate"]), "mate_in": ln["mate"],
-                    "tactic": "mate" if ln["mate"] else "check", "line": steps, "wins": wins})
+                    "tactic": "mate" if ln["mate"] else "check" if board.gives_check(first) else "quiet",
+                    "line": steps, "wins": wins})
     return out
 
 
@@ -288,6 +289,8 @@ def _who(after: chess.Board, square: str) -> str:
 
 def describe(threat: dict, after: chess.Board) -> str:
     """One threat in a few words: «слон d4 ← ферзь d8» / «пешка e5 ← пешка d4, конь f3» / «мат: Qh7#»."""
+    if threat.get("kind") == "check":
+        return f"шах: {threat['san']}"
     if threat.get("tactic"):
         return f"{'мат в ' + str(threat['mate_in']) if threat['mate'] else 'шах'}: {' '.join(s['san'] for s in threat['line'])}"
     attackers = sorted(threat["attackers"], key=lambda s: ORDER[after.piece_type_at(chess.parse_square(s)) or chess.PAWN])
@@ -416,10 +419,11 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
 
 # ---------- the check of the user's own move («проверь свой ход») ----------
 
-def own_move(before: chess.Board, move: chess.Move) -> dict:
+def own_move(before: chess.Board, move: chess.Move, with_checks: bool = True) -> dict:
     """What the opponent can win at once after the user's `move` in `before` (the user to move there): take, mate,
     queen a pawn — as in `analyse`, with "attacks": [] for the tactical replies vision/engine.py adds (a fork, a
-    pin, a trap: a reply that wins material but is not a capture right now)."""
+    pin, a trap: a reply that wins material but is not a capture right now). With `with_checks` every check he can
+    give is an item too (`check_items`)."""
     b = before.copy(stack=False)
     b.push(move)
     if b.is_game_over():
@@ -433,8 +437,35 @@ def own_move(before: chess.Board, move: chess.Move) -> dict:
         for t in key["threats"]:
             if t["target"] == to and not t["mate"]:
                 t["optional"] = True
+    if with_checks:
+        key["threats"] += check_items(b, key["threats"])
     key["attacks"] = []
     return key
+
+
+def check_items(board: chess.Board, known: list[dict]) -> list[dict]:
+    """Every check the side to move in `board` can give, as an item to mark — the user, 2026-11-24: «на угрозах надо
+    отмечать шахи», every one of them (his checks are the most forcing moves and the easiest to overlook). Found by
+    an arrow of the checking move, or from his piece to the king. Left out: a mate (the rule's mate threat has it)
+    and a winning capture with check (its capture threat has it)."""
+    king = board.king(not board.turn)
+    if king is None:
+        return []
+    out = []
+    for move in board.legal_moves:
+        if not board.gives_check(move):
+            continue
+        fr, to = chess.square_name(move.from_square), chess.square_name(move.to_square)
+        if any(fr in t["attackers"] and to in (t.get("targets") or [t["target"]]) for t in known):
+            continue
+        b = board.copy(stack=False)
+        b.push(move)
+        if b.is_checkmate():
+            continue
+        out.append({"target": move.uci(), "targets": [to, chess.square_name(king)], "piece": None, "attackers": [fr],
+                    "best": move.uci(), "san": board.san(move), "gain": 0, "mate": False, "kind": "check",
+                    "line": [{"from": fr, "to": to, "san": board.san(move), "who": "he"}]})
+    return out
 
 
 def reply_item(after: chess.Board, reply: chess.Move, loss: int, already: set[str] = frozenset()) -> dict:
@@ -499,24 +530,22 @@ def describe_attack(a: dict, board: chess.Board) -> str:
     return f"{san} — выигрывает материал"
 
 
-def check_own(key: dict, arrows: list[dict], board: chess.Board) -> dict:
+def check_own(key: dict, arrows: list[dict], board: chess.Board, with_checks: bool = True) -> dict:
     """The user's arrows after his own move against `own_move`'s key (`board`: the position after his move).
-    An arrow finds a «take» threat as in `check`, and an attack when it is the opponent's move itself, or goes from
-    the square where his piece lands to its target."""
-    by_square = {sq: t for t in key["threats"] for sq in t.get("targets") or [t["target"]]}
+    An arrow finds a «take» threat as in `check` — every item it fits, so one arrow can find a capture and the check
+    it gives —, and an attack when it is the opponent's move itself, or goes from the square where his piece lands to
+    its target. Without `with_checks` (answers given before every check was asked for) the check items are left out."""
+    items_in = [t for t in key["threats"] if with_checks or t.get("kind") != "check"]
     found, found_a, extra = set(), set(), []
     for arrow in arrows:
         a, b = arrow.get("from"), arrow.get("to")
-        hit = None
-        for frm, to in ((a, b), (b, a)):
-            t = by_square.get(to)
-            if t and (frm in t["attackers"] or frm in (t.get("xray") or [])):
-                hit = t["target"]
-                break
-        if not hit and (t := _battery(key["threats"], a, b)):
-            hit = t["target"]
-        if hit:
-            found.add(hit)
+        hits = [t["target"] for t in items_in for frm, to in ((a, b), (b, a))
+                if to in (t.get("targets") or [t["target"]]) and (frm in t["attackers"] or frm in (t.get("xray") or []))]
+        if not hits and (t := _battery(items_in, a, b)):
+            hits = [t["target"]]
+        hit = hits[0] if hits else None
+        if hits:
+            found.update(hits)
             continue
         for at in key["attacks"]:
             his = [s for s in at.get("line") or [] if s["who"] == "he"]  # his moves of the line count too
@@ -532,15 +561,15 @@ def check_own(key: dict, arrows: list[dict], board: chess.Board) -> dict:
             continue
         why = "defended" if (b in key["defended"] or a in key["defended"]) else "not_attacked"
         extra.append({"from": a, "to": b, "why": why})
-    missed = [t["target"] for t in key["threats"] if t["target"] not in found and not t.get("optional")]
+    missed = [t["target"] for t in items_in if t["target"] not in found and not t.get("optional")]
     missed_a = [at["key"] for at in key["attacks"] if at["key"] not in found_a]
     items = [{"target": t["target"], "found": t["target"] in found, "text": describe(t, board),
-              "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in key["threats"]]
+              "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in items_in]
     items += [{"target": at["key"], "found": at["key"] in found_a, "text": describe_attack(at, board), "detail": ""}
               for at in key["attacks"]]
     extras = []
     for x in extra:
         e = explain_extra(x, key, board) if x["why"] == "defended" else {"text": f"{x['from']}→{x['to']}: этого он не сможет", "detail": ""}
         extras.append(e)
-    return {"found": sorted(found | found_a), "missed": missed + missed_a, "extra": extra,
+    return {"found": sorted(found | found_a), "missed": missed + missed_a, "extra": extra, "checks": with_checks,
             "ok": not missed and not missed_a and not extra, "items": items, "extras": extras}

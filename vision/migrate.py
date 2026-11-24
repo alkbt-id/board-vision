@@ -37,7 +37,7 @@ def _own_moves() -> int:
         move = chess.Move.from_uci(row["move"])
         if move not in before.legal_moves:
             continue
-        key = threats.own_move(before, move)
+        key = threats.own_move(before, move)  # with every check: an answer not asked for them is checked without
         old = json.loads(row["answer"] or "{}")
         key["threats"] += [t for t in old.get("threats") or [] if t.get("tactic")]  # the engine's, kept
         key["attacks"] = old.get("attacks") or []
@@ -45,10 +45,12 @@ def _own_moves() -> int:
                   (json.dumps(key, ensure_ascii=False), len(key["threats"]), row["id"]))
         after = before.copy(stack=False)
         after.push(move)
-        for a in store.q("SELECT id, arrows FROM attempts WHERE item=?", (row["id"],)):
-            res = threats.check_own(key, json.loads(a["arrows"] or "[]"), after)
+        for a in store.q("SELECT id, arrows, result FROM attempts WHERE item=?", (row["id"],)):
+            asked = bool(json.loads(a["result"] or "{}").get("checks"))
+            res = threats.check_own(key, json.loads(a["arrows"] or "[]"), after, with_checks=asked)
             store.run("UPDATE attempts SET n_threats=?, found=?, missed=?, extra=?, ok=?, result=? WHERE id=?",
-                      (len([t for t in key["threats"] if not t.get("optional")]) + len(key["attacks"]),
+                      (len([t for t in key["threats"] if not t.get("optional") and (asked or t.get("kind") != "check")])
+                       + len(key["attacks"]),
                        len(res["found"]), len(res["missed"]),
                        len(res["extra"]), int(res["ok"]), json.dumps(res, ensure_ascii=False), a["id"]))
             n += 1

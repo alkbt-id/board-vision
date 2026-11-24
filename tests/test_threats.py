@@ -301,7 +301,7 @@ def test_a_battery_arrow_from_the_piece_behind_finds_the_threat():
     key = {**threats.own_move(before, move), "attacks": []}
     after = before.copy()
     after.push(move)
-    res = threats.check_own(key, [{"from": "f1", "to": "f7"}], after)
+    res = threats.check_own(key, [{"from": "f1", "to": "f7"}], after, with_checks=False)
     assert res["ok"] and res["found"] == ["f8"]
 
 
@@ -312,3 +312,22 @@ def test_a_winning_check_line_ends_with_its_last_take():
     line = [chess.Move.from_uci(u) for u in ("c1f1", "g2f1", "a7b6", "h2h3")]
     items = threats.tactic_items(board, [{"pv": line, "mate": None}], [], "he")
     assert [s["san"] for s in items[0]["line"]] == ["Rxf1+", "Bxf1", "axb6"]
+
+
+def test_every_check_after_your_move_is_to_be_marked():
+    # after ...g5 (the user's game): besides Rxf8+ (a capture threat) White has Qxg5+ — a check that loses the queen
+    # but is still his check to see
+    before = chess.Board("5rk1/2p2Rp1/p1qp3p/1p6/1P4Q1/P3P2P/1P4P1/5RK1 b - - 0 24")
+    move = chess.Move.from_uci("g7g5")
+    key = {**threats.own_move(before, move), "attacks": []}
+    checks = [t for t in key["threats"] if t.get("kind") == "check"]
+    assert "g4g5" in [t["target"] for t in checks]
+    assert not any(t["target"] == "f7f8" for t in checks)  # Rxf8+ is the capture threat's
+    after = before.copy()
+    after.push(move)
+    missed = threats.check_own(key, [{"from": "f7", "to": "f8"}], after)
+    assert not missed["ok"] and "g4g5" in missed["missed"]
+    arrows = [{"from": "f7", "to": "f8"}] + [{"from": t["attackers"][0], "to": t["targets"][0]} for t in checks]
+    assert threats.check_own(key, arrows, after)["ok"]
+    old = threats.check_own(key, [{"from": "f7", "to": "f8"}], after, with_checks=False)
+    assert old["ok"]  # answers from before checks were asked
