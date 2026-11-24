@@ -329,6 +329,41 @@ def reply_item(after: chess.Board, reply: chess.Move, loss: int, already: set[st
             "check": check, "loss": loss}
 
 
+def _attacked_by(board: chess.Board, move: chess.Move) -> dict:
+    """What `move` (just played in `board`) attacks: its targets by the capture rule and whether it gives check."""
+    c = board.copy(stack=False)
+    c.push(chess.Move.null())
+    targets = sorted({t["target"] for t in opponent_key(c)["threats"] if t["piece"]})
+    return {"targets": targets, "check": board.is_check()}
+
+
+def recapture_line(after: chess.Board, reply: chess.Move, best) -> list[dict]:
+    """Why a capture that looks like a fair trade by the capture rule wins all the same (an overloaded defender:
+    Bxc4, and Nxc4 lets Nxc2+ fork king and rook): [his capture, your natural recapture, his answer to it], each
+    {"from", "to", "san", "who": "he" | "you"}; the last also "targets" and "check" — what it attacks.
+    `best(board)` gives his answer (Stockfish). [] when `reply` is not such a capture or cannot be taken back."""
+    if not after.is_capture(reply) or capture_gain(after, reply) > 0:
+        return []
+    b = after.copy(stack=False)
+    step = lambda m, who: {"from": chess.square_name(m.from_square), "to": chess.square_name(m.to_square),
+                           "san": b.san(m), "who": who}
+    line = [step(reply, "he")]
+    b.push(reply)
+    caps = list(b.generate_legal_captures(to_mask=chess.BB_SQUARES[reply.to_square]))
+    if not caps:
+        return []
+    back = min(caps, key=lambda m: _order(b, m))
+    line.append(step(back, "you"))
+    b.push(back)
+    punish = best(b)
+    if punish is None or punish not in b.legal_moves:
+        return []
+    line.append(step(punish, "he"))
+    b.push(punish)
+    line[-1].update(_attacked_by(b, punish))
+    return line
+
+
 def describe_attack(a: dict, board: chess.Board) -> str:
     """«вилка Nc7+: король, ладья a8» / «Re8: нападение на ферзя e5» / «Bb4 — выигрывает материал»."""
     san = a["moves"][0]["san"]
@@ -358,9 +393,11 @@ def check_own(key: dict, arrows: list[dict], board: chess.Board) -> dict:
             found.add(hit)
             continue
         for at in key["attacks"]:
-            for mv in at["moves"]:
+            his = [s for s in at.get("line") or [] if s["who"] == "he"]  # his moves of the line count too
+            for mv in [*at["moves"], *his]:
                 if (a, b) in ((mv["from"], mv["to"]), (mv["to"], mv["from"])) or \
-                        (a == mv["to"] and b in at["targets"]) or (b == mv["to"] and a in at["targets"]):
+                        (a == mv["to"] and b in (mv.get("targets") or at["targets"])) or \
+                        (b == mv["to"] and a in (mv.get("targets") or at["targets"])):
                     found_a.add(at["key"])
                     hit = at["key"]
             if hit:

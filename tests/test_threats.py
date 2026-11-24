@@ -165,3 +165,17 @@ def test_a_bishop_behind_a_pawn_is_an_attacker_too():
     assert e6["attackers"] == ["d5"] and e6["xray"] == ["c4"]
     got = threats.check(answer, [{"from": "d5", "to": "e6"}, {"from": "c4", "to": "e6"}], after)
     assert "e6" in got["found"] and not [x for x in got["extra"] if "e6" in (x["from"], x["to"])]
+
+
+def test_a_fair_looking_trade_that_loses_gets_its_line():
+    # the user's game 2026-11-24: after 1.Nf3 the e3 knight guards both c4 and c2 — Bxc4, and Nxc4 lets Nxc2+ fork
+    after = chess.Board("rn2kb1r/ppp1pp1p/4b1p1/4P3/1nB5/4NN2/PPP2PPP/R1B1K2R b KQkq - 0 1")
+    reply = chess.Move.from_uci("e6c4")
+    assert threats.capture_gain(after, reply) == 0  # by the capture rule a fair trade
+    line = threats.recapture_line(after, reply, lambda b: chess.Move.from_uci("b4c2"))
+    assert [(s["from"], s["to"], s["who"]) for s in line] == [("e6", "c4", "he"), ("e3", "c4", "you"), ("b4", "c2", "he")]
+    assert line[-1]["check"] and line[-1]["targets"] == ["a1"]
+    # an arrow of his fork counts as seeing the tactic
+    key = {"threats": [], "defended": [], "attacks": [{**threats.reply_item(after, reply, 400), "line": line}]}
+    assert threats.check_own(key, [{"from": "b4", "to": "c2"}], after)["ok"]
+    assert not threats.check_own(key, [], after)["ok"]

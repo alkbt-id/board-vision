@@ -251,7 +251,9 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
         reply, loss = ref
         taken = {t["target"] for t in key["threats"]}
         if not (board.is_capture(reply) and chess.square_name(reply.to_square) in taken):
-            key["attacks"].append(threats.reply_item(board, reply, loss, taken))  # a tactic the capture rule does not see
+            item = threats.reply_item(board, reply, loss, taken)  # a tactic the capture rule does not see
+            item["line"] = threats.recapture_line(board, reply, engine.best_move)  # a «fair» trade that is not
+            key["attacks"].append(item)
     result = threats.check_own(key, arrows, board)
     side = "w" if p["user"] == chess.WHITE else "b"
     store.add_item("ownmove", before_fen, mv.uci(), side, {**key, "threats": key["threats"]}, ref=pid,

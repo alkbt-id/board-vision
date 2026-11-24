@@ -323,11 +323,37 @@ const MARK = {
   miss: { fill: "#d13b25", icon: '<path d="M0-10v9" stroke="#fff" stroke-width="5" stroke-linecap="round"/><circle cy="8.5" r="3" fill="#fff"/>' },
 };
 function marked(shape, kind) {
+  return badge(shape, MARK[kind].fill, MARK[kind].icon);
+}
+// a step of a line, numbered: 1 his move, 2 your answer, 3 his…
+function numbered(shape, n, fill) {
+  return badge(shape, fill, `<text y="8" text-anchor="middle" font-size="24" font-weight="700" fill="#fff" font-family="-apple-system, system-ui, sans-serif">${n}</text>`);
+}
+function badge(shape, fill, inner) {
   // chessground draws a custom svg in the square of `orig` (100 units a square); the mark goes halfway to `dest`
   const sign = cg.state.orientation === "white" ? 1 : -1;
   const dx = (shape.dest.charCodeAt(0) - shape.orig.charCodeAt(0)) * sign, dy = (+shape.orig[1] - +shape.dest[1]) * sign;
-  const m = MARK[kind];
-  return { ...shape, customSvg: { html: `<g transform="translate(${50 + dx * 50} ${50 + dy * 50})"><circle r="19" fill="${m.fill}" stroke="#fff" stroke-width="4"/>${m.icon}</g>` } };
+  return { ...shape, customSvg: { html: `<g transform="translate(${50 + dx * 50} ${50 + dy * 50})"><circle r="19" fill="${fill}" stroke="#fff" stroke-width="4"/>${inner}</g>` } };
+}
+// a missed tactic of his after your move (vision/play.commit): his move in red with «!» and pale arrows to what it
+// hits; a capture that only looks like a fair trade gets its whole line, numbered — 1 his capture, 2 your taking
+// back (blue), 3 his answer and what it hits (Bxc4, Nxc4, Nxc2+ forking king and rook)
+function attackShapes(at) {
+  const hits = (st) => {
+    const out = (st.targets || []).map((t) => ({ orig: st.to, dest: t, brush: "paleRed" }));
+    const king = st.check && [...cg.state.pieces].find(([, p]) => p.role === "king" && p.color === S.v?.orientation);
+    if (king) out.push({ orig: st.to, dest: king[0], brush: "paleRed" });
+    return out;
+  };
+  const line = at.line || [];
+  if (line.length) {
+    return line.flatMap((st, i) => [
+      numbered({ orig: st.from, dest: st.to, brush: st.who === "you" ? "paleBlue" : "red" }, i + 1, st.who === "you" ? "#2a78d6" : "#d13b25"),
+      ...(i === line.length - 1 ? hits(st) : []),
+    ]);
+  }
+  const m = at.moves[0];
+  return [marked({ orig: m.from, dest: m.to, brush: "red" }, "miss"), ...hits({ to: m.to, targets: at.targets, check: at.check })];
 }
 // while you play, the side panel goes away: only the board, the strip over it and ✕ in the header
 function setPlaying(on) {
@@ -635,7 +661,7 @@ async function commitMove() {
   });
   const auto = [];
   for (const t of v.own.threats) if (!found.has(t.target)) auto.push(...missedArrows(t, true));
-  for (const at of v.own.attacks) if (!found.has(at.key)) auto.push(marked({ orig: at.moves[0].from, dest: at.moves[0].to, brush: "red" }, "miss"));
+  for (const at of v.own.attacks) if (!found.has(at.key)) auto.push(...attackShapes(at));
   if (res.ok) return goOn(v); // all seen: the bot answers at once
   S.reviewShapes = user;
   cg.setShapes(user);
