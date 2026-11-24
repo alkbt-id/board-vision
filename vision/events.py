@@ -6,7 +6,7 @@ Each line is written and flushed at once, so the training can be watched live (`
   ts    epoch milliseconds
   kind  what happened (the list below), plus the fields of that kind
 Server kinds: app_start, app_stop, import_start, import_step, import_done, import_error, session_start,
-item_shown, answer, session_end, error.
+item_shown, answer, session_exit (left early for the start screen), session_end, error.
 Window kinds (POST /api/log, only those in CLIENT_KINDS): move_shown, arrow_add, arrow_del, arrows_clear,
 next_click, hidden, visible, blur, focus, idle, active, page_load, error_js. The press of «Проверить» / «Угроз нет»
 is the server's `answer` event (its ms and arrows), so it always comes before the result.
@@ -20,7 +20,7 @@ import time
 from . import config
 
 CLIENT_KINDS = {
-    "move_shown", "arrow_add", "arrow_del", "arrows_clear", "check_click", "next_click",
+    "move_shown", "arrow_add", "arrow_del", "arrows_clear", "check_click", "next_click", "leave_click",
     "hidden", "visible", "blur", "focus", "idle", "active", "page_load", "error_js",
 }
 _lock = threading.Lock()

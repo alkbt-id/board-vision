@@ -163,11 +163,22 @@ def finish(sid: str) -> dict:
         "quiet": len(quiet), "quiet_ok": sum(1 for a in quiet if a["ok"]),
         "extra": sum(a["extra"] for a in ans),
         "median_ms": int(statistics.median(a["ms"] for a in ans)) if ans else 0,
+        "size": len(s["items"]), "complete": len(ans) == len(s["items"]),
     }
     s["summary"] = summary
     store.run("UPDATE sessions SET ended=?, summary=? WHERE id=?", (store.now_ms(), json.dumps(summary), sid))
     events.log("session_end", session=sid, summary=summary)
     return summary
+
+
+def leave(sid: str) -> dict:
+    """The user went back to the start screen before the end: the session ends with what was answered."""
+    s = SESSIONS.get(sid)
+    if s is None or "summary" in s:
+        return {"left": False}
+    events.log("session_exit", session=sid, index=s["index"], size=len(s["items"]),
+               answered=len(s["answers"]), on_answered=s["index"] in s["answers"])
+    return {"left": True, "summary": finish(sid)}
 
 
 def history(days: int = 30) -> list[dict]:

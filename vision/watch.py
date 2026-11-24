@@ -81,9 +81,16 @@ def line(e: dict) -> str | None:
             return f"{t}     … бездействие {sec(e.get('ms'))}"
         case "active":
             return None
+        case "session_exit":
+            return f"{t} ━━ вышел на главный экран на позиции {e.get('index', 0) + 1}/{e.get('size')} (отвечено {e.get('answered')})"
+        case "leave_click":
+            return None
         case "session_end":
             s = e.get("summary") or {}
-            return (f"{t} ━━ итог: угроз найдено {s.get('found', 0)} из {s.get('threats', 0)}, тихих верно "
+            if not s.get("positions"):
+                return f"{t} ━━ итог: ни одной позиции не отвечено"
+            part = "" if s.get("complete", True) else f" (из {s.get('positions')} отвеченных)"
+            return (f"{t} ━━ итог{part}: угроз найдено {s.get('found', 0)} из {s.get('threats', 0)}, тихих верно "
                     f"{s.get('quiet_ok', 0)} из {s.get('quiet', 0)}, лишних стрелок {s.get('extra', 0)}, "
                     f"в среднем {sec(s.get('median_ms'))} на позицию")
     return f"{t} {k}"

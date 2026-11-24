@@ -227,6 +227,9 @@ let stateTimer = null;
 async function showStart() {
   S.phase = "start";
   S.sid = null;
+  S.pos = null;
+  arrows = [];
+  setPick(null);
   S.reviewShapes = null;
   wrap.classList.add("locked");
   cg.set({ fen: "start", orientation: "white", lastMove: undefined });
@@ -299,7 +302,7 @@ function showPosition(p) {
   cg.set({ fen: p.fen, orientation: p.orientation, turnColor: p.orientation === "white" ? "black" : "white", lastMove: undefined, check: false });
   cg.set({ animation: { enabled: true, duration: 250 } });
   panel.innerHTML = `
-    <div class="step"><span>Позиция ${p.index + 1} из ${p.size}</span><span id="clock"></span></div>
+    <div class="step"><span>Позиция ${p.index + 1} из ${p.size}</span>${exitButton()}</div>
     <div class="prog"><i style="width:${(p.index / p.size) * 100}%"></i></div>
     <p class="task" id="task">Смотри: соперник ходит…</p>
     <div class="arrow-list" id="arrow-list" hidden></div>
@@ -316,9 +319,11 @@ function showPosition(p) {
   });
   $("#check").addEventListener("click", check);
   setTimeout(() => {
+    if (S.pos !== p || S.phase !== "wait") return; // left for the start screen meanwhile
     cg.set({ fen: p.after, lastMove: [p.move.slice(0, 2), p.move.slice(2, 4)], turnColor: p.orientation });
     play(p.capture ? "Capture" : "Move");
     setTimeout(() => {
+      if (S.pos !== p || S.phase !== "wait") return;
       S.phase = "draw";
       S.shownAt = performance.now();
       lastActive = performance.now();
@@ -329,6 +334,19 @@ function showPosition(p) {
     }, 280);
   }, 450);
 }
+
+// «На главный» in the progress row: ends the session with what was answered and shows the start screen
+const exitButton = () => `<button class="link-btn" id="leave" title="Закончить сессию сейчас и вернуться на главный экран (Esc дважды)">На главный</button>`;
+async function leaveSession(how = "button") {
+  if (!S.sid || S.phase === "start" || S.phase === "summary") return showStart();
+  const sid = S.sid;
+  log("leave_click", { how, phase: S.phase, ms: ms(), arrows: arrows.length });
+  S.phase = "start";
+  try { await api("/api/leave", { session: sid }); } catch {}
+  showStart();
+}
+panel.addEventListener("click", (e) => { if (e.target.closest("#leave")) leaveSession("button"); });
+document.querySelector(".title").addEventListener("click", () => leaveSession("title"));
 
 function updateCheckButton() {
   const b = $("#check");
@@ -379,7 +397,7 @@ function showReview(r, took) {
   const link = r.ref && r.ref.startsWith("http") ? ` · <a href="${esc(r.ref)}" target="_blank" rel="noopener">открыть</a>` : "";
   const last = S.index + 1 >= S.size;
   panel.innerHTML = `
-    <div class="step"><span>Позиция ${S.index + 1} из ${S.size}</span><span>${sec(took)}</span></div>
+    <div class="step"><span>Позиция ${S.index + 1} из ${S.size} · ${sec(took)}</span>${exitButton()}</div>
     <div class="prog"><i style="width:${((S.index + 1) / S.size) * 100}%"></i></div>
     <div class="result ${cls}"><h3>${head}</h3>${lines.length ? `<ul>${lines.join("")}</ul>` : ""}</div>
     <p class="hint">${esc(where)}${link}</p>
@@ -419,7 +437,7 @@ function showSummary(s) {
 }
 
 // ---------- keyboard: Enter — the main button; Backspace or ⌘Z — take back the last arrow; ⇧Backspace — all;
-// Esc — cancel a started tap ----------
+// Esc — cancel a started tap; Esc twice — back to the start screen ----------
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && S.phase === "draw") {
     e.preventDefault();
@@ -433,7 +451,12 @@ document.addEventListener("keydown", (e) => {
   } else if ((e.key === "Backspace" || e.key === "Delete") && S.phase === "draw") {
     e.preventDefault();
     if (e.shiftKey) clearArrows(); else undoArrow();
-  } else if (e.key === "Escape") setPick(null);
+  } else if (e.key === "Escape") {
+    if (S.pick) { setPick(null); return; }
+    const now = performance.now();
+    if (now - (S.lastEsc || 0) < 800) leaveSession("esc"); // Esc twice: back to the start screen
+    S.lastEsc = now;
+  }
 });
 
 // ---------- start ----------

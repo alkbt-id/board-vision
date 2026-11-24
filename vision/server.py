@@ -6,6 +6,7 @@
   POST /api/session   start a session -> the first position
   POST /api/answer    {session, index, arrows: [{from, to}], ms} -> the review
   POST /api/next      {session} -> the next position, or the session's summary
+  POST /api/leave     {session} -> end the session early (back to the start screen)
   POST /api/log       an event from the window (vision/events.py lists the kinds)
   POST /api/refresh   download new positions now
   GET  /api/history   results per day
@@ -73,6 +74,10 @@ def post_next(body: dict) -> dict:
     return session.next_item(str(body["session"]))
 
 
+def post_leave(body: dict) -> dict:
+    return session.leave(str(body["session"]))
+
+
 def post_log(body: dict) -> dict:
     return {"ok": events.from_client(body) is not None}
 
@@ -110,6 +115,7 @@ app = Starlette(
         Route("/api/session", guarded(new_session), methods=["POST"]),
         Route("/api/answer", guarded(post_answer), methods=["POST"]),
         Route("/api/next", guarded(post_next), methods=["POST"]),
+        Route("/api/leave", guarded(post_leave), methods=["POST"]),
         Route("/api/log", guarded(post_log), methods=["POST"]),
         Route("/api/refresh", guarded(post_refresh), methods=["POST"]),
         Route("/api/history", get_history),
