@@ -278,6 +278,7 @@ def tactic_items(board: chess.Board, lines: list[dict], known: list[dict], who: 
                     "attackers": [chess.square_name(first.from_square)], "best": first.uci(), "san": board.san(first),
                     "gain": 0, "mate": bool(ln["mate"]), "mate_in": ln["mate"],
                     "tactic": "mate" if ln["mate"] else "check" if board.gives_check(first) else "quiet",
+                    "motif": "мат" if ln["mate"] else motif(board, first),
                     "line": steps, "wins": wins})
     return out
 
@@ -443,6 +444,51 @@ def own_move(before: chess.Board, move: chess.Move, with_checks: bool = True) ->
     return key
 
 
+def motif(board: chess.Board, move: chess.Move) -> str:
+    """What `move` of the side to move in `board` does, in one word for the board (the user, 2026-11-24: «отмечай
+    как-то отдельно на доске что это шах, вилка и связка»): «мат», «вилка» (the moved piece hits two things at once,
+    the king counting — a piece counts when it is worth more than the attacker or undefended), «связка» (a piece of
+    the other side newly pinned to its king, or standing in front of its queen on the moved piece's line), «шах»,
+    «вскрытое» (another piece of his hits something new: the moved one opened its line), or ""."""
+    me, them = board.turn, not board.turn
+    b = board.copy(stack=False)
+    b.push(move)
+    if b.is_checkmate():
+        return "мат"
+    mover = board.piece_type_at(move.from_square) or chess.PAWN
+    hit = [sq for sq in b.attacks(move.to_square) if b.color_at(sq) == them and b.piece_type_at(sq) != chess.KING
+           and (VALUE[b.piece_type_at(sq)] > VALUE[mover] or not b.is_attacked_by(them, sq))]
+    if len(hit) + int(b.is_check()) >= 2:
+        return "вилка"
+    for sq in chess.SquareSet(b.occupied_co[them]):
+        if b.piece_type_at(sq) != chess.KING and b.is_pinned(them, sq) and not board.is_pinned(them, sq):
+            return "связка"
+    if mover in (chess.BISHOP, chess.ROOK, chess.QUEEN):  # a piece hit in front of its queen on the same line
+        f0, r0 = chess.square_file(move.to_square), chess.square_rank(move.to_square)
+        for sq in b.attacks(move.to_square):
+            if b.color_at(sq) != them or b.piece_type_at(sq) in (chess.KING, chess.QUEEN):
+                continue
+            df = (chess.square_file(sq) > f0) - (chess.square_file(sq) < f0)
+            dr = (chess.square_rank(sq) > r0) - (chess.square_rank(sq) < r0)
+            f, r = chess.square_file(sq) + df, chess.square_rank(sq) + dr
+            while 0 <= f < 8 and 0 <= r < 8:
+                p = b.piece_at(chess.square(f, r))
+                if p:
+                    if p.color == them and p.piece_type == chess.QUEEN:
+                        return "связка"
+                    break
+                f, r = f + df, r + dr
+    if b.is_check():
+        return "шах"
+    for sq in chess.SquareSet(b.occupied_co[me]):
+        if sq == move.to_square:
+            continue
+        new = b.attacks(sq) & b.occupied_co[them] & ~board.attacks(sq)
+        if any(b.piece_type_at(t) != chess.PAWN for t in new):
+            return "вскрытое"
+    return ""
+
+
 def check_items(board: chess.Board, known: list[dict]) -> list[dict]:
     """Every check the side to move in `board` can give, as an item to mark — the user, 2026-11-24: «на угрозах надо
     отмечать шахи», every one of them (his checks are the most forcing moves and the easiest to overlook). Found by
@@ -464,6 +510,7 @@ def check_items(board: chess.Board, known: list[dict]) -> list[dict]:
             continue
         out.append({"target": move.uci(), "targets": [to, chess.square_name(king)], "piece": None, "attackers": [fr],
                     "best": move.uci(), "san": board.san(move), "gain": 0, "mate": False, "kind": "check",
+                    "motif": motif(board, move),
                     "line": [{"from": fr, "to": to, "san": board.san(move), "who": "he"}]})
     return out
 
@@ -481,6 +528,7 @@ def reply_item(after: chess.Board, reply: chess.Move, loss: int, already: set[st
     mv = {"move": reply.uci(), "san": san, "from": chess.square_name(reply.from_square),
           "to": chess.square_name(reply.to_square), "targets": targets}
     return {"key": reply.uci(), "moves": [mv], "targets": targets, "fork": len(targets) + int(check) >= 2,
+            "motif": motif(after, reply),
             "check": check, "loss": loss}
 
 

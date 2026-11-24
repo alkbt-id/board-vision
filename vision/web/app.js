@@ -394,9 +394,24 @@ function badge(shape, fill, inner) {
   return { ...shape, customSvg: { html: `<g transform="translate(${50 + dx * 50} ${50 + dy * 50})"><circle r="19" fill="${fill}" stroke="#fff" stroke-width="4"/>${inner}</g>` } };
 }
 // a line of moves, numbered: his in red, yours in blue (a capture that only looks fair, a fork with check, a mate)
-function lineShapes(line) {
-  return line.map((st, i) => numbered({ orig: st.from, dest: st.to, brush: st.who === "you" ? "paleBlue" : "red" },
-    i + 1, st.who === "you" ? "#2a78d6" : "#d13b25"));
+// what kind of blow a missed move is, as a sign on its arrow instead of «!» (the user, 2026-11-24: «отмечай как-то
+// отдельно на доске что это шах, вилка и связка», «не надо словом.. давай значками»): + check, # mate, a fork's prongs,
+// a chain for a pin, an eye for a discovered attack
+const MOTIF_ICON = {
+  "шах": '<path d="M0-9.5v19M-9.5 0h19" stroke="#fff" stroke-width="5" stroke-linecap="round"/>',
+  "мат": '<path d="M-4-10v20M4-10v20M-10-4h20M-10 4h20" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/>',
+  "вилка": '<path d="M0 11V1M0 1L-8.5-8.5M0 1L8.5-8.5" fill="none" stroke="#fff" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>',
+  "связка": '<g transform="rotate(-35)" fill="none" stroke="#fff" stroke-width="3.6"><rect x="-12" y="-5" width="14" height="10" rx="5"/><rect x="-2" y="-5" width="14" height="10" rx="5"/></g>',
+  "вскрытое": '<path d="M-11.5 0C-6-7.5 6-7.5 11.5 0C6 7.5-6 7.5-11.5 0Z" fill="none" stroke="#fff" stroke-width="3.4"/><circle r="3.6" fill="#fff"/>',
+};
+const motifMark = (shape, motif, fill = "#d13b25") => badge(shape, fill, MOTIF_ICON[motif] || MARK.miss.icon);
+// a line of moves, numbered; its first move carries the sign of what it is (a fork, a pin…) when there is one
+function lineShapes(line, motif = "") {
+  return line.map((st, i) => {
+    const shape = { orig: st.from, dest: st.to, brush: st.who === "you" ? "paleBlue" : "red" };
+    const fill = st.who === "you" ? "#2a78d6" : "#d13b25";
+    return i === 0 && MOTIF_ICON[motif] ? motifMark(shape, motif, fill) : numbered(shape, i + 1, fill);
+  });
 }
 // a missed tactic of his after your move (vision/play.commit): his move in red with «!» and pale arrows to what it
 // hits; a capture that only looks like a fair trade gets its whole line, numbered — 1 his capture, 2 your taking
@@ -409,9 +424,9 @@ function attackShapes(at) {
     return out;
   };
   const line = at.line || [];
-  if (line.length) return [...lineShapes(line), ...hits(line[line.length - 1])];
+  if (line.length) return [...lineShapes(line, at.motif), ...hits(line[line.length - 1])];
   const m = at.moves[0];
-  return [marked({ orig: m.from, dest: m.to, brush: "red" }, "miss"), ...hits({ to: m.to, targets: at.targets, check: at.check })];
+  return [motifMark({ orig: m.from, dest: m.to, brush: "red" }, at.motif), ...hits({ to: m.to, targets: at.targets, check: at.check })];
 }
 // while you play, the side panel goes away: only the board, the strip over it and ✕ in the header
 function setPlaying(on) {
@@ -626,7 +641,7 @@ async function loadProgress() {
 
 const RULES = `
   <details class="rules"><summary>Как это работает</summary>
-    <p>Соперник делает ход. 1) Тапни каждую его фигуру, которую ты можешь выиграть прямо сейчас (взять и остаться в плюсе после всех разменов, или выиграть шахом с вилкой; на Mac — или правый клик): на ней появится фиолетовый кружок. Твой мат, в том числе в 2–3 хода, — кружок на его короле. 2) Нарисуй свой ход — стрелку от своей фигуры. 3) Нарисуй его угрозы после твоего хода — стрелки от его фигур: каждый его шах (стрелку хода с шахом), что он сможет взять с выигрышем, мат, вилки и связки, которые выигрывают материал. 4) «Хожу». Ошибки, если они есть, покажутся все вместе, потом ходит соперник.</p>
+    <p>Соперник делает ход. 1) Тапни каждую его фигуру, которую ты можешь выиграть прямо сейчас (взять и остаться в плюсе после всех разменов, или выиграть шахом с вилкой; на Mac — или правый клик): на ней появится фиолетовый кружок. Твой мат, в том числе в 2–3 хода, — кружок на его короле. 2) Нарисуй свой ход — стрелку от своей фигуры. 3) Нарисуй его угрозы после твоего хода — стрелки от его фигур: каждый его шах (стрелку хода с шахом), что он сможет взять с выигрышем, мат, вилки и связки, которые выигрывают материал. 4) «Хожу». Ошибки, если они есть, покажутся все вместе, потом ходит соперник. Значки на пропущенных ходах: + шах, # мат, развилка — вилка, цепочка — связка, глаз — вскрытое нападение, ! — взятие.</p>
     <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — ↶ над доской, Backspace или та же стрелка ещё раз. Закончил — кнопка в цветной полосе над доской или Enter.</p>
     <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
     <p>Серия: соперник ходит — отмечаешь угрозы — ходишь сам — отвечает бот уровня 1300 — снова отмечаешь… Серия без промахов делает следующую на ход длиннее, две серии с промахами подряд — на ход короче. Длина 1 — одна позиция.</p>
@@ -843,7 +858,7 @@ function verdict(res, n) {
 // a chance of yours on the board: a circle on his piece and an arrow from your piece that wins it (a mate or a
 // queening on an empty square: the move itself); `mark`: the «!» of a missed one; `pale`: a hint
 function chanceShapes(t, mark = false, pale = false) {
-  if (t.tactic) return pale ? [{ orig: t.line[0].from, dest: t.line[0].to, brush: "paleChance" }] : lineShapes(t.line);
+  if (t.tactic) return pale ? [{ orig: t.line[0].from, dest: t.line[0].to, brush: "paleChance" }] : lineShapes(t.line, t.motif);
   const best = { orig: t.best.slice(0, 2), dest: t.best.slice(2, 4) };
   if (!t.promotion && cg.state.pieces.get(t.target)) {
     const circle = { orig: t.target, brush: pale ? "paleChance" : "red" };
@@ -856,12 +871,12 @@ function chanceShapes(t, mark = false, pale = false) {
 // `mark`: the first one gets the «!» of a missed threat
 function missedArrows(t, mark = false, brush = "red") {
   // one of his checks after your move: the checking move itself
-  if (t.kind === "check") { const a = { orig: t.line[0].from, dest: t.line[0].to, brush }; return [mark ? marked(a, "miss") : a]; }
+  if (t.kind === "check") { const a = { orig: t.line[0].from, dest: t.line[0].to, brush }; return [mark ? motifMark(a, t.motif || "шах") : a]; }
   // the engine's tactic (a forced mate, a check that wins): its whole line, numbered; as a hint its first move
-  if (t.tactic) return brush === "red" ? lineShapes(t.line) : [{ orig: t.line[0].from, dest: t.line[0].to, brush }];
+  if (t.tactic) return brush === "red" ? lineShapes(t.line, t.motif) : [{ orig: t.line[0].from, dest: t.line[0].to, brush }];
   const list = t.piece === null && t.mate ? [{ orig: t.best.slice(0, 2), dest: t.best.slice(2, 4), brush }]
     : [...(t.attackers || [t.best.slice(0, 2)]), ...(t.xray || [])].map((a) => ({ orig: a, dest: t.target, brush }));
-  if (mark && list.length) list[0] = marked(list[0], "miss");
+  if (mark && list.length) list[0] = t.mate ? motifMark(list[0], "мат") : marked(list[0], "miss");
   return list;
 }
 

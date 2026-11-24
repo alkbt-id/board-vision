@@ -331,3 +331,15 @@ def test_every_check_after_your_move_is_to_be_marked():
     assert threats.check_own(key, arrows, after)["ok"]
     old = threats.check_own(key, [{"from": "f7", "to": "f8"}], after, with_checks=False)
     assert old["ok"]  # answers from before checks were asked
+
+
+def test_a_move_is_named_for_the_board():
+    fork = chess.Board("r3k3/pp6/8/1N6/8/8/PP6/4K3 w - - 0 1")
+    assert threats.motif(fork, chess.Move.from_uci("b5c7")) == "вилка"  # Nc7+: king and rook
+    check = chess.Board("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
+    assert threats.motif(check, chess.Move.from_uci("a1a8")) == "шах"
+    pin = chess.Board("4k3/4n3/8/8/8/8/8/R5K1 w - - 0 1")
+    assert threats.motif(pin, chess.Move.from_uci("a1e1")) == "связка"  # the knight on e7 pinned to the king
+    to_queen = chess.Board("8/2k5/8/4q3/8/4n3/8/R5K1 w - - 0 1")
+    assert threats.motif(to_queen, chess.Move.from_uci("a1e1")) == "связка"  # the knight in front of the queen
+    assert threats.motif(chess.Board("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1"), chess.Move.from_uci("a1a8")) == "мат"
