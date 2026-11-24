@@ -276,13 +276,15 @@ details.rules p { margin: 8px 0 0; }
 .app.side-below #ch-rating { grid-column: 2; grid-row: 1 / span 2; }
 .app.side-below #ch-time { grid-column: 2; grid-row: 3 / span 2; }
 
-/* ---------- the frame around the board, as on a real board: the frame in the light square's colour, a thin line of the
-   dark square's colour between it and the squares, the coordinates in the middle of the frame on all sides
+/* ---------- the frame around the board, as on a real board: the frame in the dark square's colour, a thin line of the
+   light square's colour between it and the squares, the coordinates in the middle of the frame on all sides
    (the user, 2026-11-24: «как на реальной доске», «внешняя рамка цветом белого поля. граница между полями и рамкой
-   цветом черного поля», «номера и буквы выровняй по середине внешней рамки») */
-.board-wrap { padding: var(--frame, 20px); background: #f0d9b5; }
-.board-wrap #board { box-shadow: 0 0 0 2px #b58863; }
-.fc { position: absolute; display: flex; pointer-events: none; user-select: none; color: #6e4f35;
+   цветом черного поля», «номера и буквы выровняй по середине внешней рамки», then «наоборот рамка черным полем,
+   граница белым») */
+.board-wrap { padding: var(--frame, 20px); background: #b58863; }
+.board-wrap #board { box-shadow: 0 0 0 2px #f0d9b5; }
+.fc { position: absolute; display: flex; pointer-events: none; user-select: none; color: #fff8ec;
+  text-shadow: 0 1px 1px rgba(60, 35, 15, .45);
   font: 700 var(--coord, 13px) / 1 var(--font-body); letter-spacing: .02em; }
 .fc span { flex: 1 1 0; display: grid; place-items: center; }
 .fc-n, .fc-s { left: var(--frame, 20px); right: var(--frame, 20px); height: var(--frame, 20px); }
