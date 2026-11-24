@@ -32,6 +32,10 @@ const S = {
   pick: null,       // tap-tap drawing: the square of the first tap
 };
 const ms = () => (S.shownAt ? Math.round(performance.now() - S.shownAt) : 0);
+// every change of S.phase repaints the strip over the board that says what to do (syncMode below)
+let _phase = S.phase;
+delete S.phase;
+Object.defineProperty(S, "phase", { get: () => _phase, set: (v) => { _phase = v; syncMode(); }, enumerable: true });
 
 // ---------- sounds (Lichess "standard", fetched by scripts/fetch_sounds.sh; silent without them) ----------
 const sounds = {};
@@ -94,6 +98,7 @@ function tryMove(from, to, how) {
   const ok = (S.v?.dests?.[from] || []).includes(to);
   if (!ok) { flashTask("Это не ход — нарисуй ход своей фигурой"); return false; }
   myMove = { from, to };
+  syncMode();
   S.reviewShapes = null;
   cg.setAutoShapes([]);
   log("plan_move", { from, to, ms: ms(), how });
@@ -157,6 +162,7 @@ function rethink() {
   if (S.phase !== "plan") return;
   log("plan_rethink", { ms: ms(), from: myMove?.from, to: myMove?.to });
   myMove = null;
+  syncMode();
   setArrows([]);
 }
 function clearArrows() {
@@ -253,14 +259,33 @@ for (const t of ["mousedown", "touchstart"]) {
 }
 wrap.addEventListener("contextmenu", (e) => e.preventDefault());
 
+// ---------- what to do now, on the board itself: a coloured strip over it and a frame of the same colour ----------
+// green — draw the opponent's threats (green arrows); blue — draw your own move (the blue arrow)
+function syncMode() {
+  const el = document.getElementById("board-mode");
+  if (!el) return;
+  let kind = "", text = "";
+  if (S.phase === "draw") { kind = "threats"; text = "Нарисуй угрозы соперника"; }
+  else if (S.phase === "plan") {
+    kind = myMove ? "threats" : "move";
+    text = myMove ? "Нарисуй, что он сможет после хода" : S.v?.check ? "Шах! Нарисуй свой ход" : "Нарисуй свой ход";
+  }
+  el.className = `board-mode${kind ? ` ${kind}` : ""}`;
+  el.textContent = text;
+  wrap.classList.toggle("mode-threats", kind === "threats");
+  wrap.classList.toggle("mode-move", kind === "move");
+}
+
 // ---------- board size: as big as the window allows ----------
 function layout() {
   const side = window.innerWidth <= 820 ? 0 : parseInt(getComputedStyle(document.documentElement).getPropertyValue("--side-w")) + 14;
   const top = $(".top").getBoundingClientRect().height;
-  const availH = window.innerHeight - top - 28;
+  const strip = $("#board-mode").getBoundingClientRect().height + 6;
+  const availH = window.innerHeight - top - 28 - strip;
   const availW = window.innerWidth - side - 28;
   const size = Math.max(240, Math.floor(Math.min(availH, availW) / 8) * 8);
   wrap.style.width = wrap.style.height = `${size}px`;
+  $("#board-mode").style.width = `${size}px`;
   cg.redrawAll();
   if (S.phase === "start" || S.phase === "summary") drawCharts();
 }
@@ -548,8 +573,8 @@ function playStep(v) {
 }
 // «проверь свой ход»: draw your move, then what he can do after it; «Хожу» checks and plays it
 function startPlan(v) {
-  S.phase = "plan";
   myMove = null;
+  S.phase = "plan";
   arrows = [];
   setPick(null);
   S.shownAt = performance.now();

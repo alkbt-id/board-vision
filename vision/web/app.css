@@ -218,3 +218,14 @@ details.rules p { margin: 8px 0 0; }
 .series-end.down .lvl { background: var(--bad); }
 .series-end b { display: block; font-size: 18px; }
 .series-end span span { font-size: 15px; color: var(--muted); }
+
+/* what to do now, over the board: green — draw his threats, blue — draw your move; the board gets the same frame */
+.board-mode { height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 10px 10px 0 0;
+  font: 700 19px/1 var(--font-body); color: #fff; visibility: hidden; letter-spacing: .01em; }
+.board-mode.threats, .board-mode.move { visibility: visible; }
+.board-mode.threats { background: #15781B; }
+.board-mode.move { background: #2a78d6; }
+.board-col { gap: 0; }
+.board-wrap.mode-threats { outline: 5px solid #15781B; outline-offset: 0; }
+.board-wrap.mode-move { outline: 5px solid #2a78d6; outline-offset: 0; }
+.board-wrap { border-radius: 0 0 3px 3px; }
