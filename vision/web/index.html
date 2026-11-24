@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- iPad: the page runs under the status bar and pads its header by the safe area, as in «Шахматный тренер» -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<title>Видение доски</title>
+<link rel="stylesheet" href="/static/vendor/chessground.base.css">
+<link rel="stylesheet" href="/static/vendor/board.lichess-brown.css">
+<link rel="stylesheet" href="/static/vendor/pieces.merida.css">
+<!-- ?v=: the iPad keeps static files cached; bump it (here and on app.js below) when app.css or app.js changes -->
+<link rel="stylesheet" href="/static/app.css?v=1">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="title">Видение доски</div>
+    <div class="status" id="status" aria-live="polite"></div>
+  </header>
+  <main class="layout" id="layout">
+    <section class="board-col">
+      <div class="board-wrap" id="board-wrap"><div id="board"></div></div>
+      <p class="hint board-hint" id="board-hint">Стрелка — от фигуры, которая бьёт, к твоей фигуре. Мышью (любой кнопкой) или пальцем: протяни, или коснись одной клетки, потом другой. Та же стрелка ещё раз — стирает.</p>
+    </section>
+    <aside class="side">
+      <div class="side-body" id="panel"></div>
+    </aside>
+  </main>
+</div>
+<script type="module" src="/static/app.js?v=1"></script>
+</body>
+</html>

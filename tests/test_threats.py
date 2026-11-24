@@ -1,0 +1,97 @@
+"""The answer key on the user's own blunders and on the rule's edge cases."""
+
+import chess
+
+from vision import threats
+
+
+def targets(fen: str) -> dict[str, dict]:
+    answer = threats.analyse(chess.Board(fen))
+    assert answer is not None
+    return {t["target"]: t for t in answer["threats"]}
+
+
+def test_qf3_bc4_hits_f7_with_mate():
+    # 2026-11-24 09:03, the user (Black) played 4…Nd4?? here and got 5.Qxf7#
+    got = targets("r1bqkbnr/pppp1p1p/2n3p1/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR b KQkq - 1 4")
+    assert "f7" in got
+    assert got["f7"]["mate"]
+    assert set(got["f7"]["attackers"]) == {"c4", "f3"}
+
+
+def test_qf3_ng5_hits_f7_with_mate():
+    # 2026-11-24 13:41, the user (Black) played 10…Bb7?? and got 11.Qxf7#
+    got = targets("r1bqk2r/2ppnpbp/p5p1/1p1Pp1N1/8/2PP1Q2/PP3PPP/RNB1K2R b KQkq - 4 10")
+    assert got["f7"]["mate"]
+    assert set(got["f7"]["attackers"]) == {"f3", "g5"}
+
+
+def test_knight_move_opens_the_d_file_on_the_bishop():
+    # 2026-11-24 13:53: 20…Nc7 opened Qd8 onto Bd4; the user (White) played 21.Qg6?? Qxd4
+    got = targets("r2qr1k1/ppn3p1/2p2p1p/8/2PB4/PP1P2Q1/5PPP/R4RK1 w - - 1 21")
+    assert got["d4"]["attackers"] == ["d8"]
+    assert got["d4"]["piece"] == "B"
+    assert got["d4"]["gain"] == 3
+
+
+def test_quiet_opening_position_has_no_threats():
+    answer = threats.analyse(chess.Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"))
+    assert answer == {"threats": [], "defended": []}
+
+
+def test_battery_wins_a_knight_a_single_rook_does_not():
+    battery = targets("4r1k1/8/8/4n3/8/8/4R3/4R1K1 b - - 0 1")
+    assert battery["e5"]["gain"] == 3
+    single = threats.analyse(chess.Board("4r1k1/8/8/4n3/8/8/4R3/6K1 b - - 0 1"))
+    assert single is not None
+    assert single["threats"] == []
+    assert single["defended"] == ["e5"]
+
+
+def test_pinned_knight_does_not_take():
+    # Nc3 is pinned to Ke1 by Bb4: it cannot take the queen on d5
+    answer = threats.analyse(chess.Board("4k3/8/8/3q4/1b6/2N5/8/4K3 b - - 0 1"))
+    assert answer is not None
+    assert "d5" not in {t["target"] for t in answer["threats"]}
+
+
+def test_back_rank_mate_without_a_capture():
+    got = targets("6k1/5ppp/8/8/8/8/8/R5K1 b - - 0 1")
+    assert got["a8"]["mate"]
+    assert got["a8"]["piece"] is None
+    assert got["a8"]["attackers"] == ["a1"]
+
+
+def test_mates_on_several_squares_are_one_threat():
+    # the queen on e2 mates on d1, e1 and f1: one threat, an arrow to any of them finds it
+    after = chess.Board("6k1/8/8/8/8/8/4qPPP/7K w - - 0 1")
+    answer = threats.analyse(after)
+    assert answer is not None
+    mates = [t for t in answer["threats"] if t["piece"] is None]
+    assert len(mates) == 1
+    assert set(mates[0]["targets"]) == {"d1", "e1", "f1"}
+    got = threats.check(answer, [{"from": "e2", "to": mates[0]["targets"][-1]}], after)
+    assert mates[0]["target"] in got["found"]
+
+
+def test_cheaper_attacker_on_a_defended_queen():
+    # Bb5 attacks the queen on d3 even though the queen is defended
+    got = targets("4k3/8/8/1b6/8/3Q4/4P3/4K3 w - - 0 1")
+    assert got["d3"]["gain"] == 6
+
+
+def test_in_check_is_not_a_drill_position():
+    assert threats.analyse(chess.Board("4k3/8/8/8/8/8/4q3/4K3 w - - 0 1")) is None
+
+
+def test_check_counts_arrows_both_ways_and_explains_extras():
+    after = chess.Board("r2qr1k1/ppn3p1/2p2p1p/8/2PB4/PP1P2Q1/5PPP/R4RK1 w - - 1 21")
+    answer = threats.analyse(after)
+    assert answer is not None
+    ok = threats.check(answer, [{"from": "d4", "to": "d8"}], after)
+    assert ok["found"] == ["d4"]
+    assert ok["missed"] == []
+    miss = threats.check(answer, [{"from": "a7", "to": "a3"}], after)
+    assert miss["missed"] == ["d4"]
+    assert miss["extra"][0]["why"] == "not_attacked"
+    assert "слон d4 — бьёт ферзь d8" in miss["lines"][0]

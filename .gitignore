@@ -1,0 +1,16 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Personal data lives in ~/Library/Application Support/BoardVision (vision/config.py)
+
+# Build output
+mac/build/
+
+# Lichess sounds are non-free: scripts/fetch_sounds.sh downloads them locally
+vision/web/vendor/sound/*.mp3
+
+.DS_Store
+*.tmp
