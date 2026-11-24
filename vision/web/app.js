@@ -75,35 +75,63 @@ const cg = Chessground($("#board"), {
   },
 });
 
-let arrows = []; // the user's arrows on the board now: [{from, to}]
-const sameArrow = (a, b) => a.from === b.from && a.to === b.to;
-function arrowList(shapes) {
-  return shapes.filter((s) => s.dest && s.orig !== s.dest).map((s) => ({ from: s.orig, to: s.dest }));
+// The user's arrows on the board now, in the order drawn: [{from, to}]. Ways to take one back: «Отменить» (or
+// Backspace / ⌘Z) removes the last one, ✕ in the list under the task removes any, and drawing an arrow between the
+// same two squares again — in either direction — removes it (a reversed arrow counts as the same answer anyway).
+let arrows = [];
+const sameLine = (a, b) => (a.from === b.from && a.to === b.to) || (a.from === b.to && a.to === b.from);
+const toShapes = (list) => list.map((a) => ({ orig: a.from, dest: a.to, brush: "green" }));
+function setArrows(list) {
+  arrows = list;
+  cg.setShapes(toShapes(list));
+  renderArrows();
 }
-// compares the board's arrows with the last known ones and logs what was added or removed
+// chessground's own right-button drawing: compare with the known arrows; a new arrow over an existing line
+// (the same one reversed) takes that line off; circles are dropped (only arrows count)
 function syncArrows(shapes, how) {
   if (S.phase !== "draw") { cg.setShapes(S.reviewShapes || []); return; } // a right click outside drawing changes nothing
-  const now = arrowList(shapes);
-  for (const a of now) if (!arrows.some((b) => sameArrow(a, b))) log("arrow_add", { ...a, ms: ms(), how });
-  for (const a of arrows) if (!now.some((b) => sameArrow(a, b))) log("arrow_del", { ...a, ms: ms(), how });
-  arrows = now;
-  // only arrows count: circles from a right click are dropped
-  if (shapes.some((s) => !s.dest || s.orig === s.dest)) cg.setShapes(now.map((a) => ({ orig: a.from, dest: a.to, brush: "green" })));
-  updateCheckButton();
+  const now = shapes.filter((s) => s.dest && s.orig !== s.dest).map((s) => ({ from: s.orig, to: s.dest }));
+  let next = arrows.filter((a) => now.some((b) => a.from === b.from && a.to === b.to));
+  for (const a of arrows) if (!next.includes(a)) log("arrow_del", { ...a, ms: ms(), how });
+  for (const a of now) {
+    if (arrows.some((b) => a.from === b.from && a.to === b.to)) continue;
+    const twin = next.find((b) => sameLine(a, b));
+    if (twin) { next = next.filter((b) => b !== twin); log("arrow_del", { ...twin, ms: ms(), how: `${how}-reverse` }); }
+    else { next.push(a); log("arrow_add", { ...a, ms: ms(), how }); }
+  }
+  setArrows(next);
 }
 function toggleArrow(from, to, how) {
-  const shapes = arrows.map((a) => ({ orig: a.from, dest: a.to, brush: "green" }));
-  const i = arrows.findIndex((a) => a.from === from && a.to === to);
-  if (i >= 0) shapes.splice(i, 1); else shapes.push({ orig: from, dest: to, brush: "green" });
-  cg.setShapes(shapes);
-  syncArrows(shapes, how);
+  const twin = arrows.find((b) => sameLine({ from, to }, b));
+  if (twin) {
+    log("arrow_del", { ...twin, ms: ms(), how: twin.from === from ? how : `${how}-reverse` });
+    setArrows(arrows.filter((b) => b !== twin));
+  } else {
+    log("arrow_add", { from, to, ms: ms(), how });
+    setArrows([...arrows, { from, to }]);
+  }
 }
+function removeArrow(i, how) {
+  const a = arrows[i];
+  if (!a || S.phase !== "draw") return;
+  log("arrow_del", { ...a, ms: ms(), how });
+  setArrows(arrows.filter((_, j) => j !== i));
+}
+const undoArrow = () => removeArrow(arrows.length - 1, "undo");
 function clearArrows() {
-  if (!arrows.length) return;
-  cg.setShapes([]);
-  arrows = [];
+  if (!arrows.length || S.phase !== "draw") return;
   setPick(null);
-  log("arrows_clear", { ms: ms() });
+  log("arrows_clear", { ms: ms(), n: arrows.length });
+  setArrows([]);
+}
+// the arrows under the task: each with ✕; «Отменить» and «Стереть все»; the main button's label
+function renderArrows() {
+  const list = $("#arrow-list");
+  if (list) {
+    list.innerHTML = arrows.map((a, i) => `<button class="chip" data-i="${i}" title="Убрать эту стрелку"><span class="sq">${a.from} → ${a.to}</span><span class="x" aria-hidden="true">✕</span></button>`).join("");
+    list.hidden = !arrows.length;
+  }
+  for (const id of ["#undo", "#clear"]) { const b = $(id); if (b) b.disabled = S.phase !== "draw" || !arrows.length; }
   updateCheckButton();
 }
 
@@ -274,9 +302,18 @@ function showPosition(p) {
     <div class="step"><span>Позиция ${p.index + 1} из ${p.size}</span><span id="clock"></span></div>
     <div class="prog"><i style="width:${(p.index / p.size) * 100}%"></i></div>
     <p class="task" id="task">Смотри: соперник ходит…</p>
-    <div class="actions"><button class="btn quiet" id="clear" disabled>Стереть стрелки</button></div>
+    <div class="arrow-list" id="arrow-list" hidden></div>
+    <div class="actions">
+      <button class="btn" id="undo" disabled title="Убрать последнюю стрелку (Backspace или ⌘Z)">Отменить</button>
+      <button class="btn quiet" id="clear" disabled>Стереть все</button>
+    </div>
     <button class="btn primary big" id="check" disabled>Угроз нет</button>`;
+  $("#undo").addEventListener("click", undoArrow);
   $("#clear").addEventListener("click", clearArrows);
+  $("#arrow-list").addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if (chip) removeArrow(+chip.dataset.i, "list");
+  });
   $("#check").addEventListener("click", check);
   setTimeout(() => {
     cg.set({ fen: p.after, lastMove: [p.move.slice(0, 2), p.move.slice(2, 4)], turnColor: p.orientation });
@@ -287,7 +324,7 @@ function showPosition(p) {
       lastActive = performance.now();
       $("#task").innerHTML = "Соперник сходил. Нарисуй стрелки на все свои фигуры, которые теперь под ударом.";
       $("#check").disabled = false;
-      $("#clear").disabled = false;
+      renderArrows();
       log("move_shown", { item: p.item });
     }, 280);
   }, 450);
@@ -382,15 +419,21 @@ function showSummary(s) {
   $("#again").focus();
 }
 
-// ---------- keyboard: Enter — the screen's main button; Backspace — clear the arrows; Esc — cancel a tap ----------
+// ---------- keyboard: Enter — the main button; Backspace or ⌘Z — take back the last arrow; ⇧Backspace — all;
+// Esc — cancel a started tap ----------
 document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && S.phase === "draw") {
+    e.preventDefault();
+    undoArrow();
+    return;
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "Enter" || e.key === " ") {
     const b = panel.querySelector(".btn.primary:not(:disabled)");
     if (b) { e.preventDefault(); b.click(); }
   } else if ((e.key === "Backspace" || e.key === "Delete") && S.phase === "draw") {
     e.preventDefault();
-    clearArrows();
+    if (e.shiftKey) clearArrows(); else undoArrow();
   } else if (e.key === "Escape") setPick(null);
 });
 

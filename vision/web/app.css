@@ -120,6 +120,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .days div { display: grid; grid-template-columns: 70px 1fr auto; gap: 8px; color: var(--muted); }
 .days b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* the arrows drawn so far, under the task: each one can be taken off with its ✕ */
+.arrow-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 6px 0 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); cursor: pointer; font-size: 13px; }
+.chip:hover { border-color: var(--bad); }
+.chip .x { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: var(--muted); font-size: 11px; }
+.chip:hover .x { background: var(--bad-soft); color: var(--bad); }
+@media (any-pointer: coarse) { .chip { min-height: 44px; padding: 0 8px 0 14px; font-size: 15px; } .chip .x { width: 28px; height: 28px; } }
+
 /* the square the next tap starts an arrow from */
 cg-board square.from-pick { background: rgba(21, 120, 27, .35); }
 

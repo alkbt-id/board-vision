@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="/static/vendor/board.lichess-brown.css">
 <link rel="stylesheet" href="/static/vendor/pieces.merida.css">
 <!-- ?v=: the iPad keeps static files cached; bump it (here and on app.js below) when app.css or app.js changes -->
-<link rel="stylesheet" href="/static/app.css?v=1">
+<link rel="stylesheet" href="/static/app.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -26,13 +26,13 @@
   <main class="layout" id="layout">
     <section class="board-col">
       <div class="board-wrap" id="board-wrap"><div id="board"></div></div>
-      <p class="hint board-hint" id="board-hint">Стрелка — от фигуры, которая бьёт, к твоей фигуре. Мышью (любой кнопкой) или пальцем: протяни, или коснись одной клетки, потом другой. Та же стрелка ещё раз — стирает.</p>
+      <p class="hint board-hint" id="board-hint">Стрелка — от фигуры, которая бьёт, к твоей фигуре. Мышью (любой кнопкой) или пальцем: протяни, или коснись одной клетки, потом другой. Промахнулся — «Отменить» (Backspace), ✕ у стрелки в списке или та же стрелка ещё раз, в любую сторону.</p>
     </section>
     <aside class="side">
       <div class="side-body" id="panel"></div>
     </aside>
   </main>
 </div>
-<script type="module" src="/static/app.js?v=1"></script>
+<script type="module" src="/static/app.js?v=2"></script>
 </body>
 </html>
