@@ -265,10 +265,15 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
     ref = engine.refutation(board, mv)
     before_fen, san = board.fen(), board.san(mv)
     board.push(mv)
+    # his checks that win and his forced mates in 2–3 after your move, as the engine sees them — also when your move
+    # is the best there is (a side note, 2026-11-24: an unavoidable fork marked right was counted as extra)
+    lines = engine.forcing(board)
+    if lines:
+        key["threats"] += threats.tactic_items(board, lines, key["threats"], "he")
     if ref:
         reply, loss = ref
-        taken = {t["target"] for t in key["threats"]}
-        if not (board.is_capture(reply) and chess.square_name(reply.to_square) in taken):
+        taken = {t["target"] for t in key["threats"]} | {t["best"] for t in key["threats"] if t.get("tactic")}
+        if reply.uci() not in taken and not (board.is_capture(reply) and chess.square_name(reply.to_square) in taken):
             item = threats.reply_item(board, reply, loss, taken)  # a tactic the capture rule does not see
             item["line"] = threats.recapture_line(board, reply, engine.best_move)  # a «fair» trade that is not
             key["attacks"].append(item)

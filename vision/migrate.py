@@ -36,7 +36,9 @@ def _own_moves() -> int:
         if move not in before.legal_moves:
             continue
         key = threats.own_move(before, move)
-        key["attacks"] = json.loads(row["answer"] or "{}").get("attacks") or []
+        old = json.loads(row["answer"] or "{}")
+        key["threats"] += [t for t in old.get("threats") or [] if t.get("tactic")]  # the engine's, kept
+        key["attacks"] = old.get("attacks") or []
         store.run("UPDATE items SET answer=?, n_threats=? WHERE id=?",
                   (json.dumps(key, ensure_ascii=False), len(key["threats"]), row["id"]))
         after = before.copy(stack=False)

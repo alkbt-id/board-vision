@@ -274,3 +274,14 @@ def test_taking_back_after_your_own_fair_capture_is_not_a_threat():
     before = chess.Board("4k3/8/2p5/3p4/8/8/3Q4/4K3 w - - 0 1")
     key = threats.own_move(before, chess.Move.from_uci("d2d5"))
     assert [t["target"] for t in key["threats"]] == ["d5"]
+
+
+def test_his_fork_after_your_move_is_found_by_its_arrow():
+    # after your move he has Nc7+ forking king and rook (the engine's line, faked): its arrow is right, not extra
+    board = chess.Board("r3k3/pp6/8/1N6/8/8/PP6/4K3 w - - 0 1")
+    key = {"threats": [], "defended": [], "attacks": []}
+    line = [chess.Move.from_uci(u) for u in ("b5c7", "e8d7", "c7a8", "d7c6")]
+    key["threats"] += threats.tactic_items(board, [{"pv": line, "mate": None}], key["threats"], "he")
+    assert threats.check_own(key, [{"from": "b5", "to": "c7"}], board)["ok"]
+    res = threats.check_own(key, [], board)
+    assert not res["ok"] and res["missed"] == ["b5c7"]
