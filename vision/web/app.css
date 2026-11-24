@@ -125,14 +125,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .days div { display: grid; grid-template-columns: 70px 1fr auto; gap: 8px; color: var(--muted); }
 .days b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-/* the arrows drawn so far, under the task: each one can be taken off with its ✕ */
-.arrow-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 6px 0 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); cursor: pointer; font-size: 13px; }
-.chip:hover { border-color: var(--bad); }
-.chip .x { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: var(--muted); font-size: 11px; }
-.chip:hover .x { background: var(--bad-soft); color: var(--bad); }
-@media (any-pointer: coarse) { .chip { min-height: 44px; padding: 0 8px 0 14px; font-size: 15px; } .chip .x { width: 28px; height: 28px; } }
-
 /* the square the next tap starts an arrow from */
 cg-board square.from-pick { background: rgba(21, 120, 27, .35); }
 
@@ -171,65 +163,68 @@ cg-board square.from-pick { background: rgba(21, 120, 27, .35); }
 details.rules { font-size: 13px; color: var(--muted); }
 details.rules summary { cursor: pointer; font-weight: 600; }
 details.rules p { margin: 8px 0 0; }
-/* the drill: progress row with ✕, one question, the arrows, two buttons */
-.bar { display: flex; align-items: center; gap: 10px; }
-.bar .prog { flex: 1; }
-.bar .count { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .ibtn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
 .ibtn:hover { background: var(--surface-2); color: var(--ink); }
 .ibtn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-.task { font: 600 22px/1.25 var(--font-display); }
-/* the answer, as a coloured banner with a round icon (chess.com style) */
-.verdict { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; font: 700 20px/1.2 var(--font-body); }
-.verdict.ok { background: var(--good-soft); color: var(--good); }
-.verdict.fail { background: var(--bad-soft); color: var(--bad); }
-.verdict .vic { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 19px; }
-.verdict.ok .vic { background: var(--good); }
-.verdict.fail .vic { background: var(--bad); }
-.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.items li { font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
-.items .mk { flex: none; width: 1em; text-align: center; font-weight: 700; }
-.items .tx { min-width: 0; display: grid; gap: 2px; }
-.items li.found { color: var(--good); }
-.items li.missed { color: var(--bad); }
-.items li.extra { color: var(--muted); }
-.items small { font-size: 12.5px; color: var(--muted); font-weight: 400; }
 @media (any-pointer: coarse) { .ibtn { width: 44px; height: 44px; } }
 .center { text-align: center; }
 #level { font-size: 15px; font-weight: 600; }
 
-/* the series: big dots, like a puzzle streak */
-.streak { display: flex; flex-wrap: wrap; gap: 8px; }
-.streak .dot { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font: 700 18px/1 var(--font-body); border: 2px solid var(--line); color: #fff; }
-.streak .dot.ok { background: var(--good); border-color: var(--good); }
-.streak .dot.miss { background: var(--bad); border-color: var(--bad); }
-.streak .dot.now { border-color: var(--accent-bg); box-shadow: 0 0 0 4px var(--accent-soft); }
-.streak .dot.todo { background: var(--surface-2); }
-.streak .dot.own { border-radius: 9px; } /* the check of your own move: a square, his moves: circles */
-/* «Твой ход» / «Что под ударом?» with a square of your colour (Lichess style) */
-.turn { display: flex; align-items: center; gap: 12px; font: 700 22px/1.2 var(--font-body); }
-.turn .who { flex: none; width: 30px; height: 30px; border-radius: 6px; border: 2px solid var(--line); }
-.turn .who.white { background: #f5f5f5; }
-.turn .who.black { background: #262421; border-color: #5a5754; }
-/* the end of a series: a banner with the new length */
-.series-end { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); }
-.series-end .lvl { flex: none; min-width: 52px; height: 52px; padding: 0 8px; border-radius: 12px; display: grid; place-items: center; font: 800 22px/1 var(--font-body); color: #fff; background: var(--muted); }
-.series-end.up .lvl { background: var(--good); }
-.series-end.down .lvl { background: var(--bad); }
-.series-end b { display: block; font-size: 18px; }
-.series-end span span { font-size: 15px; color: var(--muted); }
+/* ---------- the header while you play: ✕ back to the start screen, a thin bar of the sitting's progress ---------- */
+.top { position: relative; }
+.top-left { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.top-left .ibtn { margin-left: -8px; }
+.sit-prog { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; }
+.sit-prog i { display: block; height: 100%; width: 0; background: var(--chart); border-radius: 0 2px 2px 0; transition: width .3s; }
 
-/* what to do now, over the board: orange — draw his threats (orange arrows), blue — draw your move (the blue arrow) */
-.board-mode { height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 10px 10px 0 0;
-  font: 700 19px/1 var(--font-body); color: #fff; visibility: hidden; letter-spacing: .01em; }
-.board-mode.threats, .board-mode.move { visibility: visible; }
-.board-mode.threats { background: #e07b00; color: #1b1b1b; }
-.board-mode.move { background: #2a78d6; }
+/* ---------- while you play the side panel goes away: only the board and the strip over it ---------- */
+.app.playing .side { display: none; }
+.app.playing .layout { grid-template-columns: auto; }
+
+/* ---------- the strip over the board: the series, what to do now (or how it went), the one button ----------
+   orange — draw his threats (orange arrows); blue — draw your move (the blue arrow); green / red — the review; grey — wait */
 .board-col { gap: 0; }
+.board-mode { height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 6px 0 14px;
+  border-radius: 8px 8px 0 0; font: 700 20px/1.1 var(--font-display); color: var(--ink); background: var(--surface-3); visibility: hidden; }
+.board-mode.threats, .board-mode.move, .board-mode.wait, .board-mode.ok, .board-mode.fail, .board-mode.end { visibility: visible; }
+.board-mode.threats { background: #e07b00; color: #1b1200; }
+.board-mode.move { background: #2a78d6; color: #fff; }
+.board-mode.wait { color: var(--muted); }
+.board-mode.ok { background: #2c7a4b; color: #fff; }
+.board-mode.fail { background: #b23b2a; color: #fff; }
+.bm-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bm-text .lvl { display: inline-block; margin-left: 8px; padding: 3px 8px; border-radius: 6px; background: rgba(0, 0, 0, .22); font-size: 16px; vertical-align: 2px; }
+.bm-btn { flex: none; height: 44px; min-width: 104px; padding: 0 18px; border: 0; border-radius: 6px; cursor: pointer;
+  font: 700 17px/1 var(--font-display); background: #1b1200; color: #fff; }
+.bm-btn:hover:not(:disabled) { background: #000; }
+.board-mode.move .bm-btn { background: #fff; color: #1a56a8; }
+.board-mode.ok .bm-btn { background: #fff; color: #1f5e38; }
+.board-mode.fail .bm-btn { background: #fff; color: #8f2a1d; }
+.board-mode.end .bm-btn, .board-mode.wait .bm-btn { background: var(--accent-bg); color: var(--accent-ink); }
+.board-mode .bm-btn:disabled { opacity: .45; cursor: default; }
+.bm-undo { flex: none; width: 44px; height: 44px; border: 0; border-radius: 6px; display: grid; place-items: center; cursor: pointer;
+  background: rgba(0, 0, 0, .14); color: inherit; }
+.bm-undo:hover { background: rgba(0, 0, 0, .24); }
+.bm-undo svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.bm-btn:focus-visible, .bm-undo:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+/* the series: a circle — the check after his move, a square — after yours; filled — clean, ✕ — a miss, the ringed one — now.
+   A long series shrinks the dots instead of pushing the text and the button out */
+.bm-dots { display: flex; align-items: center; gap: 5px; flex: 0 1 auto; min-width: 0; max-width: 45%; }
+.bm-dots:empty { display: none; }
+.bm-dots.dense { gap: 2px; }
+.bm-dots .dot { position: relative; flex: 0 1 auto; width: 20px; min-width: 4px; aspect-ratio: 1; box-sizing: border-box; border: 2px solid currentColor; border-radius: 50%; }
+.bm-dots.dense .dot { border-width: 1.5px; }
+.bm-dots .dot.own { border-radius: 25%; }
+.bm-dots .dot.ok { background: currentColor; }
+.bm-dots .dot.todo { opacity: .35; }
+.bm-dots .dot.now { width: 26px; border-width: 3px; }
+.bm-dots .dot.now::after { content: ""; position: absolute; inset: 26%; border-radius: inherit; background: currentColor; }
+.bm-dots .dot.miss::before, .bm-dots .dot.miss::after { content: ""; position: absolute; left: 16%; right: 16%; top: 50%; height: 2px; margin-top: -1px; background: currentColor; transform: rotate(45deg); }
+.bm-dots .dot.miss::after { transform: rotate(-45deg); }
+
 /* the frame is drawn inside the board (over the squares, under nothing you click), so it lines up with the strip */
-.board-wrap { position: relative; }
+.board-wrap { position: relative; border-radius: 0 0 3px 3px; }
 .board-wrap.mode-threats::after, .board-wrap.mode-move::after { content: ""; position: absolute; inset: 0; border: 5px solid;
   border-top: 0; border-radius: 0 0 3px 3px; pointer-events: none; z-index: 10; }
 .board-wrap.mode-threats::after { border-color: #e07b00; }
 .board-wrap.mode-move::after { border-color: #2a78d6; }
-.board-wrap { border-radius: 0 0 3px 3px; }

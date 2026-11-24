@@ -15,17 +15,27 @@
 <link rel="stylesheet" href="/static/vendor/board.lichess-brown.css">
 <link rel="stylesheet" href="/static/vendor/pieces.merida.css">
 <!-- ?v=: the iPad keeps static files cached; bump it (here and on app.js below) when app.css or app.js changes -->
-<link rel="stylesheet" href="/static/app.css?v=12">
+<link rel="stylesheet" href="/static/app.css?v=13">
 </head>
 <body>
 <div class="app">
   <header class="top">
-    <div class="title" title="На главный экран">Видение доски</div>
+    <div class="top-left">
+      <button class="ibtn" id="exit" hidden aria-label="На главный экран" title="На главный экран (Esc дважды)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <div class="title" title="На главный экран">Видение доски</div>
+    </div>
     <div class="status" id="status" aria-live="polite"></div>
+    <div class="sit-prog" id="sit-prog" hidden><i></i></div>
   </header>
   <main class="layout" id="layout">
     <section class="board-col">
-      <div class="board-mode" id="board-mode"></div>
+      <!-- the strip over the board: the series, what to do now (or how it went), and the one button -->
+      <div class="board-mode" id="board-mode">
+        <div class="bm-dots" id="bm-dots" role="img"></div>
+        <div class="bm-text" id="bm-text" aria-live="polite"></div>
+        <button class="bm-undo" id="bm-undo" hidden aria-label="Убрать последнюю стрелку" title="Убрать последнюю стрелку (Backspace)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+        <button class="bm-btn" id="bm-btn" hidden></button>
+      </div>
       <div class="board-wrap" id="board-wrap"><div id="board"></div></div>
     </section>
     <aside class="side">
@@ -33,6 +43,6 @@
     </aside>
   </main>
 </div>
-<script type="module" src="/static/app.js?v=16"></script>
+<script type="module" src="/static/app.js?v=17"></script>
 </body>
 </html>

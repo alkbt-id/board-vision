@@ -90,11 +90,6 @@ const drawingNow = () => S.phase === "draw" || S.phase === "plan";
 const sameLine = (a, b) => (a.from === b.from && a.to === b.to) || (a.from === b.to && a.to === b.from);
 const toShapes = (list) => [...(myMove ? [{ orig: myMove.from, dest: myMove.to, brush: "blue" }] : []),
   ...list.map((a) => ({ orig: a.from, dest: a.to, brush: "orange" }))];
-const PIECE_RU = { pawn: "пешка", knight: "конь", bishop: "слон", rook: "ладья", queen: "ферзь", king: "король" };
-function moveName(m) {
-  const p = cg.state.pieces.get(m.from);
-  return `${p ? PIECE_RU[p.role] : ""} ${m.from}→${m.to}`.trim();
-}
 // the first arrow in a plan: your move, if it is one
 function tryMove(from, to, how) {
   const ok = (S.v?.dests?.[from] || []).includes(to);
@@ -107,12 +102,11 @@ function tryMove(from, to, how) {
   setArrows(arrows);
   return true;
 }
+// a short message in the strip over the board, then back to what to do now
 function flashTask(text) {
-  const t = $("#plan .tt") || $("#task .tt");
-  if (!t) return;
-  const was = t.textContent;
-  t.textContent = text;
-  setTimeout(() => { if (t.textContent === text) t.textContent = was; }, 1600);
+  bm.text.textContent = text;
+  clearTimeout(flashTask.timer);
+  flashTask.timer = setTimeout(syncMode, 1600);
 }
 function setArrows(list) {
   arrows = list;
@@ -123,6 +117,8 @@ function setArrows(list) {
 // (the same one reversed) takes that line off; circles are dropped (only arrows count)
 function syncArrows(shapes, how) {
   if (!drawingNow()) { cg.setShapes(S.reviewShapes || []); return; } // a right click outside drawing changes nothing
+  // your move drawn again (chessground took the blue arrow off or recoloured it): take the move back
+  if (S.phase === "plan" && myMove && !shapes.some((s) => s.brush === "blue")) { rethink(); return; }
   let now = shapes.filter((s) => s.dest && s.orig !== s.dest && s.brush !== "blue").map((s) => ({ from: s.orig, to: s.dest }));
   if (S.phase === "plan" && !myMove) {
     const a = now.find((x) => !arrows.some((b) => x.from === b.from && x.to === b.to));
@@ -141,6 +137,7 @@ function syncArrows(shapes, how) {
 }
 function toggleArrow(from, to, how, extra = {}) {
   if (S.phase === "plan" && !myMove) { tryMove(from, to, how); return; }
+  if (S.phase === "plan" && sameLine({ from, to }, myMove)) { rethink(); return; } // your move drawn again: take it back
   const twin = arrows.find((b) => sameLine({ from, to }, b));
   if (twin) {
     log("arrow_del", { ...twin, ms: ms(), how: twin.from === from ? how : `${how}-reverse` });
@@ -173,17 +170,8 @@ function clearArrows() {
   log("arrows_clear", { ms: ms(), n: arrows.length });
   setArrows([]);
 }
-// the arrows under the task: each with ✕; «Отменить» and «Стереть все»; the main button's label
-function renderArrows() {
-  const list = $("#arrow-list");
-  if (list) {
-    list.innerHTML = arrows.map((a, i) => `<button class="chip" data-i="${i}" title="Убрать эту стрелку"><span class="sq">${a.from} → ${a.to}</span><span class="x" aria-hidden="true">✕</span></button>`).join("");
-    list.hidden = !arrows.length;
-  }
-  for (const id of ["#undo", "#clear"]) { const b = $(id); if (b) b.disabled = !drawingNow() || !arrows.length; }
-  updateCheckButton();
-  if (S.phase === "plan") renderPlan();
-}
+// the strip over the board shows the button's label and the undo button: repaint it
+const renderArrows = () => syncMode();
 
 // Left mouse button and fingers draw too (chessground draws only with the right button and would clear the arrows
 // on a left click): a drag draws an arrow; a tap on one square, then on another, does the same.
@@ -261,26 +249,87 @@ for (const t of ["mousedown", "touchstart"]) {
 }
 wrap.addEventListener("contextmenu", (e) => e.preventDefault());
 
-// ---------- what to do now, on the board itself: a coloured strip over it and a frame of the same colour ----------
-// orange — draw the opponent's threats (orange arrows); blue — draw your own move (the blue arrow)
+// ---------- the strip over the board: the series, what to do now (or how it went) and the one button ----------
+// orange — draw his threats (orange arrows); blue — draw your move (the blue arrow); green / red — the review;
+// grey — wait. While you draw, a frame of the strip's colour runs inside the board.
+const bm = { el: $("#board-mode"), dots: $("#bm-dots"), text: $("#bm-text"), undo: $("#bm-undo"), btn: $("#bm-btn") };
+let bmAction = null;
 function syncMode() {
-  const el = document.getElementById("board-mode");
-  if (!el) return;
-  let kind = "", text = "";
-  if (S.phase === "draw") { kind = "threats"; text = "Нарисуй угрозы соперника"; }
-  else if (S.phase === "plan") {
-    kind = myMove ? "threats" : "move";
-    text = myMove ? "Нарисуй, что он сможет после хода" : S.v?.check ? "Шах! Нарисуй свой ход" : "Нарисуй свой ход";
+  if (!bm.el) return;
+  const ph = S.phase, rv = ph === "review" ? S.review : null;
+  let kind = "", text = "", label = "", act = null;
+  if (ph === "wait") { kind = "wait"; text = S.waitText || ""; }
+  else if (ph === "draw") { kind = "threats"; text = "Угрозы соперника"; label = arrows.length ? "Готово" : "Угроз нет"; act = check; }
+  else if (ph === "plan") {
+    if (myMove) { kind = "threats"; text = "Его ответы"; label = "Хожу"; act = commitMove; }
+    else { kind = "move"; text = S.v?.check ? "Шах! Твой ход" : "Твой ход"; label = "Хожу"; }
+  } else if (ph === "review") {
+    if (!rv) { kind = "wait"; text = "Проверяю…"; }
+    else { kind = rv.kind; text = rv.text; label = rv.label; act = rv.onNext; }
   }
-  el.className = `board-mode${kind ? ` ${kind}` : ""}`;
-  el.textContent = text;
+  bm.el.className = `board-mode${kind ? ` ${kind}` : ""}`;
+  bm.text.textContent = text;
+  if (rv?.chip) {
+    const c = document.createElement("span");
+    c.className = "lvl";
+    c.textContent = rv.chip.text;
+    c.title = rv.chip.title;
+    bm.text.append(c);
+  }
+  bm.btn.hidden = !label;
+  bm.btn.textContent = label;
+  bm.btn.disabled = !act;
+  bmAction = act;
+  bm.undo.hidden = !(drawingNow() && (arrows.length || (ph === "plan" && myMove)));
+  const d = dots();
+  bm.dots.innerHTML = d.html;
+  bm.dots.classList.toggle("dense", d.n > 15);
+  bm.dots.setAttribute("aria-label", d.n ? `серия: ${d.done} из ${d.n}` : "");
   wrap.classList.toggle("mode-threats", kind === "threats");
   wrap.classList.toggle("mode-move", kind === "move");
+  const prog = $("#sit-prog");
+  prog.hidden = !S.sid || !S.v?.budget;
+  if (!prog.hidden) prog.firstElementChild.style.width = `${Math.min(1, (S.v.checks || 0) / S.v.budget) * 100}%`;
+}
+bm.btn.addEventListener("click", () => { if (bmAction && !bm.btn.disabled) bmAction(); });
+bm.undo.addEventListener("click", () => undoArrow());
+// the series: a circle per check after his move, a square per check of your own move
+function dots() {
+  const v = S.v;
+  if (!S.sid || !v?.series) return { html: "", n: 0, done: 0 };
+  const n = 2 * v.series.length - 1, marks = S.marks || [], active = S.phase !== "review";
+  let html = "";
+  for (let i = 0; i < n; i++) {
+    const cls = i < marks.length ? (marks[i] ? "ok" : "miss") : i === marks.length && active ? "now" : "todo";
+    html += `<i class="dot ${cls}${i % 2 ? " own" : ""}"></i>`;
+  }
+  return { html, n, done: marks.length };
+}
+// the review on the board: a round mark in the middle of an arrow — ✓ found, ✕ extra, ! missed
+const MARK = {
+  ok: { fill: "#2c8a3e", icon: '<path d="M-8 1l5.5 5.5L9-6" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' },
+  extra: { fill: "#6f6f6f", icon: '<path d="M-6.5-6.5l13 13M6.5-6.5l-13 13" stroke="#fff" stroke-width="5" stroke-linecap="round"/>' },
+  miss: { fill: "#d13b25", icon: '<path d="M0-10v9" stroke="#fff" stroke-width="5" stroke-linecap="round"/><circle cy="8.5" r="3" fill="#fff"/>' },
+};
+function marked(shape, kind) {
+  // chessground draws a custom svg in the square of `orig` (100 units a square); the mark goes halfway to `dest`
+  const sign = cg.state.orientation === "white" ? 1 : -1;
+  const dx = (shape.dest.charCodeAt(0) - shape.orig.charCodeAt(0)) * sign, dy = (+shape.orig[1] - +shape.dest[1]) * sign;
+  const m = MARK[kind];
+  return { ...shape, customSvg: { html: `<g transform="translate(${50 + dx * 50} ${50 + dy * 50})"><circle r="19" fill="${m.fill}" stroke="#fff" stroke-width="4"/>${m.icon}</g>` } };
+}
+// while you play, the side panel goes away: only the board, the strip over it and ✕ in the header
+function setPlaying(on) {
+  const app = $(".app");
+  $("#exit").hidden = !on;
+  if (app.classList.contains("playing") === on) return;
+  app.classList.toggle("playing", on);
+  layout();
 }
 
 // ---------- board size: as big as the window allows ----------
 function layout() {
-  const side = window.innerWidth <= 820 ? 0 : parseInt(getComputedStyle(document.documentElement).getPropertyValue("--side-w")) + 14;
+  const side = window.innerWidth <= 820 || $(".app").classList.contains("playing") ? 0 : parseInt(getComputedStyle(document.documentElement).getPropertyValue("--side-w")) + 14;
   const top = $(".top").getBoundingClientRect().height;
   const strip = $("#board-mode").getBoundingClientRect().height + 6;
   const availH = window.innerHeight - top - 28 - strip;
@@ -313,8 +362,6 @@ setInterval(() => {
 }, 2000);
 
 // ---------- screens ----------
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const sec = (v) => `${(v / 1000).toFixed(1).replace(".", ",")} с`;
 const plural = (n, one, few, many) => {
   const m10 = n % 10, m100 = n % 100;
   return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
@@ -415,15 +462,17 @@ async function loadProgress() {
 const RULES = `
   <details class="rules"><summary>Как это работает</summary>
     <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле. И на поле мата в один ход. Нет угроз — «Угроз нет».</p>
-    <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — «Отменить», Backspace или та же стрелка ещё раз.</p>
+    <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — ↶ над доской, Backspace или та же стрелка ещё раз. Закончил — кнопка в цветной полосе над доской или Enter.</p>
     <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
     <p>Серия: соперник ходит — отмечаешь угрозы — ходишь сам — отвечает бот уровня 1300 — снова отмечаешь… Серия без промахов делает следующую на ход длиннее, две серии с промахами подряд — на ход короче. Длина 1 — одна позиция.</p>
   </details>`;
 
 async function showStart() {
-  S.phase = "start";
   S.v = null;
   S.sid = null;
+  S.review = null;
+  S.phase = "start";
+  setPlaying(false);
 
   arrows = [];
   setPick(null);
@@ -466,10 +515,7 @@ async function refreshState() {
 // ---------- the training: series of checks (vision/play.py) ----------
 // A sitting is about 15 checks, made of series; a series is a fragment of a game: the opponent's move, your check,
 // your move, the bot's move, your check… as many checks as your level (1 = one position, one move).
-// the progress row: bar, «3/15», and ✕ — back to the start screen (the session ends with what was answered)
-const barHTML = (done, size) => `
-  <div class="bar"><div class="prog"><i style="width:${(done / size) * 100}%"></i></div><span class="count">${Math.min(done + 1, size)}/${size}</span>
-  <button class="ibtn" id="leave" aria-label="На главный экран" title="На главный экран (Esc дважды)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
+// Everything happens on the board: the strip over it says what to do and holds the one button (syncMode above).
 async function leaveSession(how = "button") {
   if (!S.sid || S.phase === "start" || S.phase === "summary") return showStart();
   const sid = S.sid;
@@ -478,35 +524,13 @@ async function leaveSession(how = "button") {
   try { await api("/api/play/leave", { play: sid }); } catch {}
   showStart();
 }
-panel.addEventListener("click", (e) => { if (e.target.closest("#leave")) leaveSession("button"); });
+$("#exit").addEventListener("click", () => leaveSession("button"));
 document.querySelector(".title").addEventListener("click", () => leaveSession("title"));
 
-function updateCheckButton() {
-  const b = $("#check");
-  if (b && S.phase === "draw") b.textContent = arrows.length ? `Проверить (${arrows.length})` : "Угроз нет";
-}
-
-// the panel of a check: the question, the arrows drawn so far, «Отменить», and «Угроз нет» / «Проверить»
-function drawPanel(bar, task) {
-  panel.innerHTML = `
-    ${bar}
-    ${turnHTML(task, "task")}
-    <div class="arrow-list" id="arrow-list" hidden></div>
-    <button class="btn" id="undo" disabled title="Убрать последнюю стрелку (Backspace или ⌘Z)">Отменить</button>
-    <button class="btn primary big" id="check" disabled>Угроз нет</button>`;
-  $("#undo").addEventListener("click", undoArrow);
-  $("#arrow-list").addEventListener("click", (e) => {
-    const chip = e.target.closest(".chip");
-    if (chip) removeArrow(+chip.dataset.i, "list");
-  });
-  $("#check").addEventListener("click", check);
-}
 function startDrawing(item) {
   S.phase = "draw";
   S.shownAt = performance.now();
   lastActive = performance.now();
-  $("#task .tt").textContent = "Что под ударом?";
-  $("#check").disabled = false;
   renderArrows();
   log("move_shown", { item });
 }
@@ -514,19 +538,6 @@ function startDrawing(item) {
 function lockBoard() {
   cg.set({ movable: { color: undefined, dests: new Map() }, draggable: { enabled: false }, selectable: { enabled: false } });
 }
-// the series as big dots, like a puzzle streak: ✓ green, ✗ red, the current one ringed, the rest empty
-function streakHTML(v, active = true) {
-  const n = 2 * v.series.length - 1, marks = S.marks || [];
-  let dots = "";
-  for (let i = 0; i < n; i++) {
-    const cls = i < marks.length ? (marks[i] ? "ok" : "miss") : i === marks.length && active ? "now" : "todo";
-    dots += `<span class="dot ${cls}${i % 2 ? " own" : ""}" title="${i % 2 ? "проверка своего хода" : "угрозы после его хода"}">${cls === "ok" ? "✓" : cls === "miss" ? "✕" : ""}</span>`;
-  }
-  return `<div class="streak" aria-label="серия: ${marks.length} из ${n}">${dots}</div>`;
-}
-// a big line with a square of your colour, as on Lichess: «Твой ход», «Что под ударом?»
-const turnHTML = (text, id = "") => `<div class="turn"${id ? ` id="${id}"` : ""}><span class="who ${S.v?.orientation || "white"}"></span><span class="tt">${text}</span></div>`;
-const head = (v, active = true) => barHTML(v.checks - (active ? 0 : 1), v.budget) + streakHTML(v, active);
 
 async function startPlay() {
   const b = $("#go");
@@ -542,17 +553,20 @@ function playShow(v) {
   S.v = v;
   S.index = v.checks;
   S.size = v.budget;
+  setPlaying(true);
   lockBoard();
   arrows = [];
+  myMove = null;
   setPick(null);
   S.reviewShapes = null;
+  S.review = null;
   wrap.classList.remove("locked");
   cg.setShapes([]);
   cg.setAutoShapes([]);
   if (v.new_series) S.marks = [];
   if (!v.bot) return playStep(v);
+  S.waitText = v.new_series ? "Соперник ходит…" : "Бот ходит…";
   S.phase = "wait";
-  drawPanel(head(v), v.new_series ? "Соперник ходит…" : "Бот ходит…");
   if (v.new_series) {
     cg.set({ animation: { enabled: false } });
     cg.set({ fen: v.bot.before, orientation: v.orientation, lastMove: undefined, check: false });
@@ -567,173 +581,143 @@ function playShow(v) {
 }
 function playStep(v) {
   if (v.phase === "check") return startDrawing(null);
-  if (v.phase === "plan") {
-    panel.innerHTML = head(v) + `<div id="plan"></div>`;
-    return startPlan(v);
-  }
+  if (v.phase === "plan") return startPlan(v);
   if (v.phase === "next") return seriesEnd(v, null);
 }
-// «проверь свой ход»: draw your move, then what he can do after it; «Хожу» checks and plays it
-function startPlan(v) {
+// «проверь свой ход»: draw your move (blue), then what he can do after it (orange); «Хожу» checks and plays it.
+// `hints`: the threats you were just shown, pale, until you draw your move
+function startPlan(v, hints = []) {
   myMove = null;
-  S.phase = "plan";
   arrows = [];
   setPick(null);
+  S.reviewShapes = null;
+  wrap.classList.remove("locked");
+  cg.setShapes([]);
+  cg.setAutoShapes(hints);
   S.shownAt = performance.now();
   lastActive = performance.now();
-  renderPlan();
-}
-function renderPlan() {
-  const el = $("#plan");
-  if (!el) return;
-  if (!myMove) {
-    el.innerHTML = turnHTML(S.v?.check ? "Шах! Нарисуй свой ход" : "Нарисуй свой ход стрелкой");
-    return;
-  }
-  el.innerHTML = `
-    ${turnHTML(`Что он сможет после хода ${esc(moveName(myMove))}?`)}
-    <div class="arrow-list" id="arrow-list"${arrows.length ? "" : " hidden"}>${arrows.map((a, i) => `<button class="chip" data-i="${i}" title="Убрать эту стрелку"><span class="sq">${a.from} → ${a.to}</span><span class="x" aria-hidden="true">✕</span></button>`).join("")}</div>
-    <div class="actions"><button class="btn" id="undo">Отменить</button><button class="btn quiet" id="rethink">Другой ход</button></div>
-    <button class="btn primary big" id="commit">${arrows.length ? `Хожу (${arrows.length})` : "Хожу — ему нечем ответить"}</button>`;
-  $("#undo").addEventListener("click", undoArrow);
-  $("#rethink").addEventListener("click", rethink);
-  $("#commit").addEventListener("click", commitMove);
-  $("#arrow-list").addEventListener("click", (e) => { const c = e.target.closest(".chip"); if (c) removeArrow(+c.dataset.i, "list"); });
+  S.phase = "plan";
 }
 async function commitMove() {
   if (S.phase !== "plan" || !myMove) return;
   const took = ms(), mv = myMove, drawn = arrows;
+  S.review = null;
   S.phase = "review";
-  $("#commit").disabled = true;
   const capture = !!cg.state.pieces.get(mv.to);
   let v;
   try { v = await api("/api/play/commit", { play: S.sid, move: mv.from + mv.to, arrows: drawn, ms: took }); }
-  catch (e) { S.phase = "plan"; $("#commit").disabled = false; flashTask(e.message); return; }
+  catch (e) { S.phase = "plan"; flashTask(e.message); return; }
   S.v = v;
   S.marks = [...(S.marks || []), !!v.own.result.ok];
   myMove = null;
   arrows = [];
-  // the board: your move played; your arrows (green right, grey extra); what you missed in red
+  wrap.classList.add("locked");
+  // the board: your move played; your arrows (✓ green right, ✕ grey extra); what you missed in red with !
   cg.set({ fen: v.fen, lastMove: [mv.from, mv.to], turnColor: v.orientation === "white" ? "black" : "white" });
   play(capture ? "Capture" : "Move");
   const res = v.own.result, found = new Set(res.found);
-  const user = drawn.map((a) => ({ orig: a.from, dest: a.to, brush: res.extra.some((x) => x.from === a.from && x.to === a.to) ? "grey" : "green" }));
+  const user = drawn.map((a) => {
+    const extra = res.extra.some((x) => x.from === a.from && x.to === a.to);
+    return marked({ orig: a.from, dest: a.to, brush: extra ? "grey" : "green" }, extra ? "extra" : "ok");
+  });
   const auto = [];
-  for (const t of v.own.threats) if (!found.has(t.target)) auto.push(...missedArrows(t));
-  for (const at of v.own.attacks) if (!found.has(at.key)) auto.push({ orig: at.moves[0].from, dest: at.moves[0].to, brush: "red" });
+  for (const t of v.own.threats) if (!found.has(t.target)) auto.push(...missedArrows(t, true));
+  for (const at of v.own.attacks) if (!found.has(at.key)) auto.push(marked({ orig: at.moves[0].from, dest: at.moves[0].to, brush: "red" }, "miss"));
   S.reviewShapes = user;
   cg.setShapes(user);
   cg.setAutoShapes(auto);
   const n = v.own.threats.length + v.own.attacks.length;
-  const verdict = res.ok ? (n ? "Верно, всё увидел!" : "Верно, ход безопасен") : !res.missed.length ? "Лишняя стрелка" : `Пропущено ${res.missed.length} из ${n}`;
-  const body = () => {
-    panel.innerHTML = `${head(v, false)}
-      <div class="verdict ${res.ok ? "ok" : "fail"}"><span class="vic">${res.ok ? "✓" : "✕"}</span><span>${verdict}</span></div>
-      ${reviewItems(res)}`;
-  };
-  if (v.phase === "next") return seriesEnd(v, body);
-  body();
-  panel.insertAdjacentHTML("beforeend", `<button class="btn primary big" id="next">Дальше</button>`);
-  $("#next").addEventListener("click", nextSeries);
-  $("#next").focus();
+  const review = () => { S.review = { kind: res.ok ? "ok" : "fail", text: verdict(res, n), label: "Дальше", onNext: nextSeries }; };
+  if (v.phase === "next") return seriesEnd(v, review);
+  review();
+  syncMode();
 }
-// a missed threat on the board: a red arrow from every piece that can take there (a mate: the mating move)
-function missedArrows(t) {
-  if (t.piece === null && t.mate) return [{ orig: t.best.slice(0, 2), dest: t.best.slice(2, 4), brush: "red" }];
-  return [...(t.attackers || [t.best.slice(0, 2)]), ...(t.xray || [])].map((a) => ({ orig: a, dest: t.target, brush: "red" }));
+// the strip's word on a check: short, the board shows the rest
+function verdict(res, n) {
+  if (res.ok) return "Верно!";
+  if (!n) return "Угроз не было";
+  if (!res.missed.length) return "Лишняя стрелка";
+  return `${n - res.missed.length} из ${n}`;
 }
-// one row per item: the mark in its own column, the text (and the exchange in small print) next to it
-function reviewItems(res) {
-  const row = (cls, mark, text, detail) =>
-    `<li class="${cls}"><span class="mk" aria-hidden="true">${mark}</span><span class="tx">${esc(text)}${detail ? `<small>${esc(detail)}</small>` : ""}</span></li>`;
-  const items = [];
-  for (const it of res.items || []) items.push(row(it.found ? "found" : "missed", it.found ? "✓" : "✕", it.text, it.found ? "" : it.detail));
-  for (const x of res.extras || []) items.push(row("extra", "·", x.text, x.detail));
-  return items.length ? `<ul class="items">${items.join("")}</ul>` : "";
+// a threat on the board: an arrow from every piece that can take there (a mate: the mating move);
+// `mark`: the first one gets the «!» of a missed threat
+function missedArrows(t, mark = false, brush = "red") {
+  const list = t.piece === null && t.mate ? [{ orig: t.best.slice(0, 2), dest: t.best.slice(2, 4), brush }]
+    : [...(t.attackers || [t.best.slice(0, 2)]), ...(t.xray || [])].map((a) => ({ orig: a, dest: t.target, brush }));
+  if (mark && list.length) list[0] = marked(list[0], "miss");
+  return list;
 }
 
 async function check() {
   if (S.phase !== "draw") return;
-  S.phase = "review";
   const took = ms();
   setPick(null);
-  $("#check").disabled = true;
+  S.review = null;
+  S.phase = "review";
   let v;
   try { v = await api("/api/play/answer", { play: S.sid, arrows, ms: took }); }
-  catch (e) { S.phase = "draw"; $("#check").disabled = false; $("#task .tt").textContent = `Не получилось: ${e.message}`; return; }
+  catch (e) { S.phase = "draw"; flashTask(`Не получилось: ${e.message}`); return; }
   S.v = v;
   S.marks = [...(S.marks || []), !!v.result.ok];
   const r = { result: v.result, threats: v.threats };
   if (v.phase === "plan") {
-    showReview(r, took, { bar: head(v, false), bottom: `<div id="plan"></div>` });
-    return startPlan(v);
+    const hints = v.threats.flatMap((t) => missedArrows(t, false, "paleOrange"));
+    return showReview(r, () => { log("next_click", { ms: ms(), to: "plan" }); startPlan(v, hints); });
   }
-  seriesEnd(v, () => showReview(r, took, { bar: head(v, false), bottom: "" }));
+  seriesEnd(v, () => showReview(r, nextSeries));
 }
-// the end of a series: the review (if any), one line about the level, and «Дальше» / «Итог»
+// the end of a series: the review (if any) and, in the strip, the next length (▲ longer, ▼ shorter, ↻ the same)
 function seriesEnd(v, review) {
   S.phase = "review";
+  wrap.classList.add("locked");
   if (review) review();
-  else panel.innerHTML = head(v, false);
   const e = v.series_end;
+  const lost = !!e?.lost;
+  if (!review) S.review = { kind: lost ? "fail" : "end", text: "Серия закончена" };
+  Object.assign(S.review, { label: v.last ? "Итог" : "Дальше", onNext: nextSeries });
   if (e && (e.length > 1 || e.next_level !== e.level_was)) {
     const up = e.next_level > e.level_was, down = e.next_level < e.level_was;
     const n = e.next_level, word = plural(n, "ход", "хода", "ходов");
-    const title = e.clean ? "Серия пройдена!" : e.lost ? "Позиция проиграна — серия закончена" : e.game_over ? "Партия окончена" : "Серия с промахом";
-    const sub = up ? `Дальше — ${n} ${word}` : down ? `Дальше — ${n} ${word}` : `Ещё раз ${n} ${word}`;
-    panel.insertAdjacentHTML("beforeend", `<div class="series-end ${e.clean ? "up" : down ? "down" : "same"}">
-      <span class="lvl">${up ? "▲" : down ? "▼" : "↻"} ${n}</span><span><b>${title}</b><span>${sub}</span></span></div>`);
+    const title = e.clean ? "Серия пройдена!" : lost ? "Позиция проиграна" : e.game_over ? "Партия окончена" : "Серия с промахом";
+    if (!review) S.review.text = title;
+    S.review.chip = { text: `${up ? "▲" : down ? "▼" : "↻"} ${n}`, title: `${title} Дальше — ${n} ${word}` };
   }
-  panel.insertAdjacentHTML("beforeend", `<button class="btn primary big" id="next">${v.last ? "Итог" : "Дальше"}</button>`);
-  $("#next").addEventListener("click", nextSeries);
-  $("#next").focus();
+  syncMode();
 }
 async function nextSeries() {
   if (S.phase !== "review") return;
   log("next_click", { ms: ms() });
   S.reviewShapes = null;
-  $("#next").disabled = true;
+  bm.btn.disabled = true;
+  bmAction = null;
   let v;
-  try { v = await api("/api/play/next", { play: S.sid }); } catch (e) { $("#next").disabled = false; return; }
+  try { v = await api("/api/play/next", { play: S.sid }); } catch (e) { syncMode(); flashTask(e.message); return; }
   if (v.phase === "over") return showSummary(v.summary);
   playShow(v);
 }
 
-function showReview(r, took, opt = {}) {
+// the review of a check after his move: your right arrows green ✓, extra ones grey ✕, missed threats red ! from the
+// attacker; the strip turns green or red with the count and «Дальше»
+function showReview(r, onNext) {
   wrap.classList.add("locked");
-  const res = r.result;
-  // the board: the user's right arrows green, extra ones grey; missed threats red from the attacker; found targets ringed
-  const found = new Set(res.found);
+  const res = r.result, found = new Set(res.found);
   const userShapes = arrows.map((a) => {
     const right = (found.has(a.to) || found.has(a.from)) && !res.extra.some((x) => x.from === a.from && x.to === a.to);
-    return { orig: a.from, dest: a.to, brush: right ? "green" : "grey" };
+    return marked({ orig: a.from, dest: a.to, brush: right ? "green" : "grey" }, right ? "ok" : "extra");
   });
   const auto = [];
-  for (const t of r.threats) {
-    if (found.has(t.target)) auto.push({ orig: t.target, brush: "green" });
-    else auto.push(...missedArrows(t));
-  }
+  for (const t of r.threats) if (!found.has(t.target)) auto.push(...missedArrows(t, true));
   S.reviewShapes = userShapes;
   cg.setShapes(userShapes);
   cg.setAutoShapes(auto);
-  const n = r.threats.length;
-  let verdict;
-  if (!n) verdict = res.ok ? "Верно, угроз нет" : "Угроз не было";
-  else if (res.ok) verdict = n === 1 ? "Верно!" : `Верно, все ${n}!`;
-  else if (!res.missed.length) verdict = "Лишняя стрелка";
-  else verdict = `Пропущено ${res.missed.length} из ${n}`;
-  const last = S.index + 1 >= S.size;
-  panel.innerHTML = `
-    ${opt.bar ?? barHTML(S.index + 1, S.size)}
-    <div class="verdict ${res.ok ? "ok" : "fail"}"><span class="vic">${res.ok ? "✓" : "✕"}</span><span>${verdict}</span></div>
-    ${reviewItems(res)}
-    ${opt.bottom ?? `<button class="btn primary big" id="next">${last ? "Итог" : "Дальше"}</button>`}`;
-  const nb = $("#next");
-  if (nb) { nb.addEventListener("click", opt.onNext || next); nb.focus(); }
+  S.review = { kind: res.ok ? "ok" : "fail", text: verdict(res, r.threats.length), label: "Дальше", onNext };
+  syncMode();
 }
 
 async function showSummary(s) {
+  S.review = null;
   S.phase = "summary";
+  setPlaying(false);
   S.reviewShapes = null;
   lockBoard();
   wrap.classList.add("locked");
@@ -753,7 +737,7 @@ async function showSummary(s) {
   $("#again").focus();
 }
 
-// ---------- keyboard: Enter — the main button; Backspace or ⌘Z — take back the last arrow; ⇧Backspace — all;
+// ---------- keyboard: Enter or Space — the button in the strip (the main button on the start screen); Backspace or ⌘Z — take back the last arrow; ⇧Backspace — all;
 // Esc — cancel a started tap; Esc twice — back to the start screen ----------
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && drawingNow()) {
@@ -763,7 +747,9 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "Enter" || e.key === " ") {
-    const b = panel.querySelector(".btn.primary:not(:disabled)");
+    if (e.target instanceof HTMLButtonElement && e.target !== bm.btn) return; // a focused button does its own thing
+    const b = $(".app").classList.contains("playing") ? (bm.btn.hidden || bm.btn.disabled ? null : bm.btn)
+      : panel.querySelector(".btn.primary:not(:disabled)");
     if (b) { e.preventDefault(); b.click(); }
   } else if ((e.key === "Backspace" || e.key === "Delete") && drawingNow()) {
     e.preventDefault();
