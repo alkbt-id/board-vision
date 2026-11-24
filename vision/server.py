@@ -138,7 +138,9 @@ async def lifespan(_app):
     events.log("app_start", port=config.PORT, counts=store.counts())
     last = int(store.meta_get("last_refresh", "0") or 0)
     # also when an earlier run was cut off before Stockfish checked every quiet position
-    refresh = not sources.ready() or time.time() * 1000 - last > REFRESH_EVERY_MS or store.counts()["quiet_unchecked"]
+    # and when the real misses of other people's games (vision/sources/missed.py) were never read
+    refresh = (not sources.ready() or time.time() * 1000 - last > REFRESH_EVERY_MS or store.counts()["quiet_unchecked"]
+               or not store.counts().get("missed"))
     if refresh:
         store.meta_set("last_refresh", str(int(time.time() * 1000)))
 

@@ -159,6 +159,23 @@ def _item_features(item_id: int, fen: str, move: str, answer_json: str, source: 
     return _feature_cache[item_id]
 
 
+_last: dict = {}  # the rating and the difficulty points after the latest replay
+
+
+def current() -> tuple[float, dict[str, float]]:
+    """The rating now and the difficulty points learned so far (a replay of every answer)."""
+    replay()
+    return _last.get("rating", float(START)), _last.get("weights", dict(WEIGHTS))
+
+
+def difficulty(item: dict, weights: dict[str, float]) -> float:
+    """How hard a pool position is for a new answer (with chances asked): `item` has id, fen, move, answer, source."""
+    f = _item_features(item["id"], item["fen"], item["move"], item["answer"], item["source"])
+    if item["source"] != "ownmove":
+        f = with_chances(f, item["answer"], '{"chances": true}')
+    return BASE + sum(weights.get(k, 0) * v for k, v in f.items())
+
+
 def replay() -> list[dict]:
     """Every first-time answer in order, with the rating after it: [{session, ts, rating, difficulty, score, ms}].
     The difficulty points learn along the way, so the whole history is replayed from the start each time."""
@@ -182,4 +199,5 @@ def replay() -> list[dict]:
             w[k] = w.get(k, 0) + ETA * (e - s) * v
         out.append({"session": r["session"], "ts": r["ts"], "rating": rating, "difficulty": diff, "score": s,
                     "ms": r["ms"]})
+    _last.update(rating=rating, weights=dict(w))
     return out

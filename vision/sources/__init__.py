@@ -3,6 +3,7 @@
   own.py         the user's own games (Lichess API and chess.com's published data), every opponent move
   lichess_db.py  other people's rapid games at the user's level, read as a stream from the Lichess open database
   puzzles.py     Lichess puzzles turned around: the position right after the winning blow, the user on the side hit
+  missed.py      moments of those games where a player did not see a threat and the opponent then took (real misses)
   quiet.py       Stockfish's check of positions without threats: only truly quiet ones are shown as quiet
 
 `refresh()` runs them in order and reports progress through `STATUS` and the event log; the window polls
@@ -92,7 +93,7 @@ def say(text: str, step: str = "") -> None:
 
 def refresh() -> bool:
     """Download what is new and fill the pool; False when a refresh is already running."""
-    from . import lichess_db, own, puzzles, quiet
+    from . import lichess_db, missed, own, puzzles, quiet
 
     with _lock:
         if STATUS["running"]:
@@ -102,6 +103,7 @@ def refresh() -> bool:
     try:
         for step, job in (("свои партии", own.run), ("проверка тихих", lambda: quiet.run(limit=200)),
                           ("задачи Lichess", puzzles.run), ("чужие партии", lichess_db.run),
+                          ("реальные зевки", missed.run),
                           ("проверка тихих", lambda: quiet.run(limit=4000))):
             STATUS["step"] = step
             if STOPPING.is_set():

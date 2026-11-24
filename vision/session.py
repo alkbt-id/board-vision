@@ -1,7 +1,9 @@
 """Picking pool positions, and the numbers behind the start screen.
 
-The share of positions with a threat starts at a half and goes down as the user answers well (a real game has far
-more quiet moves). The training itself (series of checks) is vision/play.py.
+A series starts on a position with a threat in 60% of cases (the user, 2026-11-24: «может пора уже более острые
+добавлять?» — quiet ones were 95% right); of those positions, the one is taken whose difficulty (vision/rating.py)
+is nearest to the user's rating plus a little, so they get sharper as he gets better.
+The training itself (series of checks) is vision/play.py.
 """
 
 import json
@@ -13,28 +15,43 @@ import chess
 
 from . import events, store, threats
 
-THREAT_SOURCES = {"own": 0.3, "db": 0.4, "puzzle": 0.3}
+THREAT_SOURCES = {"own": 0.25, "db": 0.1, "missed": 0.3, "puzzle": 0.35}
 QUIET_SOURCES = {"own": 0.4, "db": 0.6}
-SOURCE_NAME = {"own": "твоя партия", "db": "чужая партия", "puzzle": "задача Lichess"}
+SOURCE_NAME = {"own": "твоя партия", "db": "чужая партия", "puzzle": "задача Lichess", "missed": "зевок в партии"}
+SHARE = 0.6  # series that start on a position with a threat
+ABOVE = 25  # the difficulty aimed at: the rating plus this (a right answer a little less than half the time)
+CANDIDATES = 40  # new positions of a source compared by difficulty for one pick
 MOTIF_NAME = {
     "mateIn1": "мат в один ход", "mateIn2": "мат в два хода", "fork": "вилка", "skewer": "сквозной удар",
     "discoveredAttack": "вскрытое нападение", "pin": "связка", "hangingPiece": "незащищённая фигура",
     "trappedPiece": "пойманная фигура", "xRayAttack": "рентген", "attraction": "завлечение",
     "deflection": "отвлечение", "interference": "перекрытие", "intermezzo": "промежуточный ход",
     "doubleCheck": "двойной шах",
+    "missed": "не увидел угрозу", "mate": "не увидел мат",  # vision/sources/missed.py
 }
 
 
 def threat_share() -> float:
-    """0.5 at first; 0.4 after 150 answers; 0.3 after 400 answers if the last 100 threat positions were mostly found."""
-    n = store.answered_count()
-    if n < 150:
-        return 0.5
-    if n < 400:
-        return 0.4
-    rows = store.q("SELECT ok FROM attempts WHERE n_threats > 0 ORDER BY id DESC LIMIT 100")
-    miss = sum(1 for r in rows if not r["ok"]) / max(1, len(rows))
-    return 0.3 if miss < 0.15 else 0.4
+    return SHARE
+
+
+def pick_near(kind_sql: str, weights: dict[str, float], exclude: set[int], rating: float,
+              points: dict[str, float]) -> int | None:
+    """One new position of `kind_sql`: a source drawn by `weights`, then of CANDIDATES random new ones of it, one of
+    the three whose difficulty is nearest to `rating` + ABOVE. None when that source has nothing new."""
+    from . import rating as rating_mod
+
+    sources = list(weights)
+    source = random.choices(sources, [weights[s] for s in sources])[0]
+    rows = [dict(r) for r in store.q(
+        f"SELECT id, fen, move, answer, source FROM items WHERE source=? AND {kind_sql}"
+        " AND id NOT IN (SELECT item FROM attempts) ORDER BY random() LIMIT ?", (source, CANDIDATES))
+        if r["id"] not in exclude]
+    if not rows:
+        return None
+    target = rating + ABOVE
+    rows.sort(key=lambda r: abs(rating_mod.difficulty(r, points) - target))
+    return random.choice(rows[:3])["id"]
 
 
 def _pick(kind_sql: str, weights: dict[str, float], n: int, exclude: set[int]) -> list[int]:

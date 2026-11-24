@@ -227,3 +227,13 @@ def test_a_mate_in_one_is_marked_with_a_circle_on_his_king():
     answer = threats.analyse(after)
     assert any(t["mate"] for t in answer["chances"])
     assert threats.check(answer, [{"from": "g8", "to": "g8"}], after)["ok"]
+
+
+def test_a_missed_threat_in_a_game_is_found():
+    from vision.sources import missed
+    board = chess.Board()
+    moves = [board.push_san(m) for m in ["e4", "e5", "Qh5", "Nc6", "Bc4", "Nf6", "Qxf7#"]]
+    found = missed.moments(moves)
+    assert [(ply, what) for _, _, ply, what in found] == [(4, "mate")]
+    before, move, _, _ = found[0]
+    assert before.san(move) == "Bc4"

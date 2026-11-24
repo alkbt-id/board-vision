@@ -25,7 +25,7 @@ import uuid
 
 import chess
 
-from . import bot, engine, events, session, store, threats
+from . import bot, engine, events, rating, session, store, threats
 
 CHECKS = 15
 REPEAT_SHARE = 0.3
@@ -62,7 +62,8 @@ def _pick_start(p: dict) -> dict:
                     it["repeat"] = True
                     return it
     if random.random() < session.threat_share():
-        ids = session._pick("n_threats > 0", session.THREAT_SOURCES, 1, p["used"])
+        near = session.pick_near("n_threats > 0", session.THREAT_SOURCES, p["used"], p["rating"], p["points"])
+        ids = [near] if near else session._pick("n_threats > 0", session.THREAT_SOURCES, 1, p["used"])
     else:
         ids = session._pick("n_threats = 0 AND quiet_ok = 1", session.QUIET_SOURCES, 1, p["used"])
     if not ids:
@@ -94,7 +95,7 @@ def _view(p: dict, extra: dict | None = None) -> dict:
 def _new_series(p: dict) -> dict:
     """The next series. With moves to play (level 2+) it starts only where your side is not lost with best play:
     traps and hard positions yes, positions lost in advance (most turned-around puzzles: the blow has landed) no.
-    A lost start that is a Lichess puzzle or a repeat becomes a single check between series (it does not move the
+    A lost start that is a Lichess puzzle, a real miss or a repeat becomes a single check between series (it does not move the
     level), so puzzles and repeats keep coming at any level; another lost start is skipped (TRIES picks at most)."""
     single = False
     for attempt in range(TRIES):
@@ -109,7 +110,7 @@ def _new_series(p: dict) -> dict:
         e = engine.evaluate(board, board.turn)
         if e is None or e >= NOT_LOST:
             break
-        if it["repeat"] or it["source"] == "puzzle" or attempt == TRIES - 1:
+        if it["repeat"] or it["source"] in ("puzzle", "missed") or attempt == TRIES - 1:
             # a Lichess puzzle (the blow has landed) or a repeat: still worth seeing, as one check between
             # series, not as a game to play on; it does not move the level
             single = True
@@ -130,8 +131,9 @@ def _new_series(p: dict) -> dict:
 
 def start() -> dict:
     pid = uuid.uuid4().hex[:8]
+    r, points = rating.current()  # the positions with a threat are picked by difficulty near the rating
     p = {"id": pid, "level": level(), "checks": 0, "series_no": 0, "used": set(), "repeats": 0, "answers": [],
-         "series_done": [], "started": store.now_ms()}
+         "series_done": [], "started": store.now_ms(), "rating": r, "points": points}
     PLAYS[pid] = p
     store.run("INSERT INTO sessions (id, started, items) VALUES (?, ?, ?)", (pid, store.now_ms(), "[]"))
     events.log("session_start", session=pid, size=CHECKS, level=p["level"], share=session.threat_share())
