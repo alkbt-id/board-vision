@@ -205,13 +205,12 @@ function removeArrow(i, how) {
 }
 function undoArrow() {
   if (arrows.length) return removeArrow(arrows.length - 1, "undo");
-  if (S.phase === "plan" && (myMove || S.step1)) rethink();
+  if (S.phase === "plan" && myMove) rethink();
 }
 // your move taken back: back to step 1 with your circles (the user, 2026-11-24: «баги при отмене - пропадают отметки
 // висящих фигур противника и нельзя вернуться на эту стадию»); a turn that started with no step 1 stays in step 2
 function rethink() {
   if (S.phase !== "plan") return;
-  if (S.step1) return backToMarks();
   log("plan_rethink", { ms: ms(), from: myMove?.from, to: myMove?.to });
   myMove = null;
   syncMode();
@@ -348,7 +347,7 @@ function syncMode() {
   bm.btn.innerHTML = label ? `<span>${label}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>` : "";
   bm.btn.disabled = !act;
   bmAction = act;
-  bm.undo.hidden = !(drawingNow() && (arrows.length || (ph === "plan" && (myMove || S.step1))));
+  bm.undo.hidden = !(drawingNow() && (arrows.length || (ph === "plan" && myMove)));
   const d = dots();
   bm.dots.innerHTML = d.html;
   bm.dots.classList.toggle("dense", d.n > 15);
@@ -488,7 +487,8 @@ const PANEL_H = 360; // the start screen's panel under the board
 function layout() {
   const app = $(".app"), playing = app.classList.contains("playing");
   const top = $(".top").getBoundingClientRect().height;
-  const strip = $("#board-mode").getBoundingClientRect().height + 6;
+  // the strip over the board is there only while you play; on the start screen the board starts level with the panel
+  const strip = playing ? $("#board-mode").getBoundingClientRect().height + 6 : 0;
   const H = window.innerHeight - top - 28 - strip, W = window.innerWidth - 28;
   const fit = (h, w) => Math.max(240, Math.floor(Math.min(h, w) / 8) * 8); // the board with its frame
   let size, below = false;
@@ -515,6 +515,8 @@ function layout() {
   wrap.style.setProperty("--coord", `${Math.round(frame * 0.56)}px`);
   renderCoords();
   wrap.style.width = wrap.style.height = `${size}px`;
+  // the start screen's panel beside the board: exactly as tall, top and bottom level (the user: «почему так не ровно»)
+  if (!playing) $(".side").style.height = below ? "" : `${size}px`;
   $("#board-mode").style.width = `${size}px`;
   const moves = $("#moves");
   moves.style.width = below ? `${size}px` : "";
@@ -745,8 +747,8 @@ function playShow(v) {
   setPick(null);
   S.reviewShapes = null;
   S.review = null;
-  S.pendingChance = null;
   S.step1 = null;
+  S.step1ok = null;
   wrap.classList.remove("locked");
   cg.setShapes([]);
   cg.setAutoShapes([]);
@@ -791,32 +793,16 @@ function startPlan(v, hints = []) {
 }
 async function commitMove() {
   if (S.phase !== "plan" || !myMove) return;
-  const took = ms(), mv = myMove, drawn = arrows, st = S.step1;
+  const took = ms(), mv = myMove, drawn = arrows;
   S.review = null;
   S.phase = "review";
   const capture = !!cg.state.pieces.get(mv.to);
-  if (st) { // step 1 goes now: his pieces you marked, with the move that may take one of them
-    let a;
-    try { a = await api("/api/play/answer", { play: S.sid, arrows: st.marks, ms: st.ms, move: mv.from + mv.to }); }
-    catch (e) { S.phase = "plan"; flashTask(e.message); return; }
-    S.step1 = null;
-    S.pendingChance = { result: a.result, chances: a.chances || [], threats: a.threats || [], marks: st.marks };
-    if (a.phase !== "plan") { // the game is over in that position: no move to make, its review now
-      S.v = a;
-      S.pendingChance = null;
-      S.marks = [...(S.marks || []), !!a.result.ok];
-      arrows = st.marks;
-      if (a.result.ok) return goOn(a);
-      return seriesEnd(a, () => showReview({ result: a.result, threats: [], chances: a.chances || [] }, nextSeries));
-    }
-  }
   let v;
   try { v = await api("/api/play/commit", { play: S.sid, move: mv.from + mv.to, arrows: drawn, ms: took }); }
   catch (e) { S.phase = "plan"; flashTask(e.message); return; }
   S.v = v;
-  const pc = S.pendingChance; // step 1 of this turn: his pieces you could win
-  S.pendingChance = null;
-  S.marks = [...(S.marks || []), (!pc || !!pc.result.ok) && !!v.own.result.ok]; // one dot a turn: both steps right
+  S.marks = [...(S.marks || []), (S.step1ok ?? true) && !!v.own.result.ok]; // one dot a turn: both steps right
+  S.step1ok = null;
   myMove = null;
   arrows = [];
   wrap.classList.add("locked");
@@ -833,24 +819,13 @@ async function commitMove() {
   // his taking back where you have just taken (optional): pale, from every piece that can, never a miss
   for (const t of v.own.threats) if (!found.has(t.target)) auto.push(...(t.optional ? missedArrows(t, false, "paleOrange") : missedArrows(t, true)));
   for (const at of v.own.attacks) if (!found.has(at.key)) auto.push(...attackShapes(at));
-  // step 1: your circles (✓ / ✕ in the corner) and the pieces of his you could have won, red with !
-  const pr = pc?.result, pFound = new Set(pr?.found || []);
-  // step 1: your circles and arrows (✓ / ✕), his threats before your move and your chances that you missed
-  const circles = (pc?.marks || []).map((a) => {
-    const right = !pr.extra.some((x) => x.from === a.from && x.to === a.to);
-    if (isCircle(a)) return cornerMark({ orig: a.from, brush: right ? "green" : "grey" }, right ? "ok" : "extra");
-    return marked({ orig: a.from, dest: a.to, brush: right ? "green" : "grey" }, right ? "ok" : "extra");
-  });
-  for (const t of pc?.threats || []) if (!t.optional && !pFound.has(t.target)) auto.push(...missedArrows(t, true));
-  for (const t of pc?.chances || []) if (!t.optional && !pFound.has(t.target)) auto.push(...chanceShapes(t, true));
-  if (res.ok && (!pr || pr.ok)) return goOn(v); // all seen: the opponent answers at once
-  const shapes = [...user, ...circles];
+  if (res.ok) return goOn(v); // all seen: the opponent answers at once
+  const shapes = user;
   S.reviewShapes = shapes;
   cg.setShapes(shapes);
   cg.setAutoShapes(auto);
-  const n = v.own.threats.filter((t) => !t.optional).length + v.own.attacks.length + (pr?.n || 0);
-  const all = { ok: false, missed: [...res.missed, ...(pr?.missed || [])], extra: [...res.extra, ...(pr?.extra || [])] };
-  const review = () => { S.review = { kind: "fail", text: verdict(all, n), label: "Дальше", onNext: nextSeries }; };
+  const n = v.own.threats.filter((t) => !t.optional).length + v.own.attacks.length;
+  const review = () => { S.review = { kind: "fail", text: verdict(res, n), label: "Дальше", onNext: nextSeries }; };
   if (v.phase === "next") return seriesEnd(v, review);
   review();
   syncMode();
@@ -887,27 +862,38 @@ function missedArrows(t, mark = false, brush = "red") {
   return list;
 }
 
-// step 1 done («Ничего нет» / «Готово», or your move drawn at once): on to your move. The circles are not sent yet —
-// they go with «Хожу», so taking the move back returns to them (backToMarks)
-function check(move = null) {
+// step 1 done («Ничего нет» / «Готово», or your move drawn at once): checked at once, before your move (the user,
+// 2026-11-24: «покажи до хода»). Right: on to your move (the one drawn, if any), your circles stay pale. A mistake:
+// the review first, then «Дальше» — or drawing on the board — starts your move
+async function check(move = null) {
   if (S.phase !== "draw") return;
+  const took = ms(), marks = arrows;
   setPick(null);
-  S.step1 = { marks: arrows, ms: ms() };
-  myMove = null;
-  arrows = [];
-  S.shownAt = performance.now();
-  lastActive = performance.now();
-  S.phase = "plan";
-  setArrows([]);
-  if (move) tryMove(move.from, move.to, `${move.how}-early`);
-}
-function backToMarks() {
-  const st = S.step1;
-  log("plan_rethink", { ms: ms(), from: myMove?.from, to: myMove?.to, back: "marks" });
-  S.step1 = null;
-  myMove = null;
-  S.phase = "draw";
-  setArrows(st.marks);
+  if (move) cg.setShapes([...toShapes(arrows), { orig: move.from, dest: move.to, brush: "blue" }]);
+  S.review = null;
+  S.phase = "review";
+  let a;
+  try { a = await api("/api/play/answer", { play: S.sid, arrows: marks, ms: took, ...(move ? { move: move.from + move.to } : {}) }); }
+  catch (e) { S.phase = "draw"; setArrows(marks); flashTask(`Не получилось: ${e.message}`); return; }
+  S.v = a;
+  S.step1ok = !!a.result.ok; // the turn's dot waits for your move: filled when both steps are right
+  const r = { result: a.result, threats: a.threats || [], chances: a.chances || [] };
+  if (a.phase !== "plan") { // the game is over in that position: no move to make
+    S.marks = [...(S.marks || []), S.step1ok];
+    S.step1ok = null;
+    if (a.result.ok) return goOn(a);
+    return seriesEnd(a, () => showReview(r, nextSeries));
+  }
+  if (a.result.ok) {
+    startPlan(a, []);
+    S.step1 = { marks };
+    setArrows([]);
+    if (move) tryMove(move.from, move.to, `${move.how}-early`);
+    return;
+  }
+  const toPlan = (how) => { log("next_click", { ms: ms(), to: "plan", how }); startPlan(a, []); };
+  showReview(r, () => toPlan("button"));
+  S.review.toPlan = toPlan;
 }
 // a clean check is not stopped on: its dot fills and the game goes on (a new series says its length in the strip);
 // only a check with a mistake stops for the review
@@ -968,8 +954,8 @@ function showReview(r, onNext) {
     return marked({ orig: a.from, dest: a.to, brush: right ? "green" : "grey" }, right ? "ok" : "extra");
   });
   const auto = [];
-  for (const t of r.threats) if (!found.has(t.target)) auto.push(...missedArrows(t, true));
-  for (const t of r.chances) if (!found.has(t.target)) auto.push(...chanceShapes(t, true));
+  for (const t of r.threats) if (!t.optional && !found.has(t.target)) auto.push(...missedArrows(t, true));
+  for (const t of r.chances) if (!t.optional && !found.has(t.target)) auto.push(...chanceShapes(t, true));
   S.reviewShapes = userShapes;
   cg.setShapes(userShapes);
   cg.setAutoShapes(auto);

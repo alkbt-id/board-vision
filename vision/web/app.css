@@ -298,3 +298,8 @@ cg-board { background-color: #e6cda6; background-image: url('data:image/svg+xml;
 .fc-e { right: 0; }
 /* the colour of what to do now runs as a thin line on the frame's outer edge, clear of the coordinates */
 .board-wrap.mode-threats::after, .board-wrap.mode-move::after, .board-wrap.mode-chances::after { border-width: 0 3px 3px; }
+
+/* the start screen: no strip over the board, so the board and the panel beside it start and end level
+   (the user, 2026-11-24: «почему так не ровно то!!!!») */
+.app:not(.playing) .board-mode { display: none; }
+.layout { align-items: start; }
