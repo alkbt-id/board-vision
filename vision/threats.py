@@ -254,15 +254,20 @@ def tactic_items(board: chess.Board, lines: list[dict], known: list[dict], who: 
             continue  # the rule has it already
         seen.add(first.uci())
         b = board.copy(stack=False)
-        steps, wins = [], []
+        steps, wins, last = [], [], 0
         for i, m in enumerate(ln["pv"]):
             if m not in b.legal_moves:
                 break
             if i % 2 == 0 and b.piece_at(m.to_square):
                 wins.append(chess.square_name(m.to_square))
+                last = i  # his last capture so far: where the line has won
             steps.append({"from": chess.square_name(m.from_square), "to": chess.square_name(m.to_square),
                           "san": b.san(m), "who": who if i % 2 == 0 else other})
             b.push(m)
+        if not ln["mate"]:
+            # a winning check ends where it has won: the engine's quiet moves after the last take are noise on the
+            # board (the user, 2026-11-24, after Rxf1+ Bxf1 axb6 h3: «а это что за бред»)
+            steps = steps[: last + 1]
         a = board.copy(stack=False)
         a.push(first)
         hits = _attacked_by(a, first)

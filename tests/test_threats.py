@@ -303,3 +303,12 @@ def test_a_battery_arrow_from_the_piece_behind_finds_the_threat():
     after.push(move)
     res = threats.check_own(key, [{"from": "f1", "to": "f7"}], after)
     assert res["ok"] and res["found"] == ["f8"]
+
+
+def test_a_winning_check_line_ends_with_its_last_take():
+    # the user's game 2026-11-24 (simplified): Rxf1+, the bishop takes back, axb6 wins the queen; the engine's 4th
+    # move (h3) is not drawn
+    board = chess.Board("1k5r/pp3p1p/1Q3p2/8/5Pn1/1P4P1/P4PBP/2r2RK1 b - - 0 21")
+    line = [chess.Move.from_uci(u) for u in ("c1f1", "g2f1", "a7b6", "h2h3")]
+    items = threats.tactic_items(board, [{"pv": line, "mate": None}], [], "he")
+    assert [s["san"] for s in items[0]["line"]] == ["Rxf1+", "Bxf1", "axb6"]
