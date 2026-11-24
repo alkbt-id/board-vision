@@ -91,12 +91,14 @@ async def lifespan(_app):
     store.db()
     events.log("app_start", port=config.PORT, counts=store.counts())
     last = int(store.meta_get("last_refresh", "0") or 0)
-    if not sources.ready() or time.time() * 1000 - last > REFRESH_EVERY_MS:
+    # also when an earlier run was cut off before Stockfish checked every quiet position
+    if not sources.ready() or time.time() * 1000 - last > REFRESH_EVERY_MS or store.counts()["quiet_unchecked"]:
         store.meta_set("last_refresh", str(int(time.time() * 1000)))
         sources.start_background()
     try:
         yield
     finally:
+        sources.STOPPING.set()
         events.log("app_stop")
 
 

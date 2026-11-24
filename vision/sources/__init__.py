@@ -18,6 +18,7 @@ import chess
 from .. import events, store, threats
 
 STATUS: dict = {"running": False, "step": "", "text": "", "error": ""}
+STOPPING = threading.Event()  # set when the app quits: a job cut off then (Stockfish killed) is not an error
 _lock = threading.Lock()
 
 # a session can start when the pool has this many positions of each kind
@@ -103,12 +104,19 @@ def refresh() -> bool:
                           ("задачи Lichess", puzzles.run), ("чужие партии", lichess_db.run),
                           ("проверка тихих", lambda: quiet.run(limit=4000))):
             STATUS["step"] = step
+            if STOPPING.is_set():
+                break
             try:
                 job()
             except Exception as e:  # one source failing must not stop the others
+                if STOPPING.is_set():
+                    events.log("import_step", step=step, text="прервано: приложение закрыто")
+                    break
                 STATUS["error"] = f"{step}: {e}"
                 events.log("import_error", step=step, text=str(e), trace=traceback.format_exc()[-1500:])
         c = store.counts()
+        if STOPPING.is_set():
+            return True
         events.log("import_done", counts=c,
                    text=f"свои {c['own']}, чужие {c['db']}, задачи {c['puzzle']} · с угрозой {c['threat']}, тихих {c['quiet']}")
     finally:
