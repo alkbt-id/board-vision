@@ -410,21 +410,63 @@ function attackShapes(at) {
 function setPlaying(on) {
   const app = $(".app");
   $("#exit").hidden = !on;
+  $("#moves").hidden = !on;
   if (app.classList.contains("playing") === on) return;
   app.classList.toggle("playing", on);
   layout();
 }
 
+// ---------- the moves of the game fragment, on the right, as on Lichess: number, white, black; the last one lit ----------
+const MOVES_W = 232;
+// a piece letter of SAN as a small Merida piece, as the board draws it (Nf3 → [knight]f3)
+const figurine = (san) => esc(san).replace(/[KQRBN]/g, (c) => `<i class="fig ${c}" aria-label="${c}"></i>`);
+// a move as it is shown: `before` is the FEN it was made in (its number and whose move it was)
+function addMove(before, san) {
+  const [, turn, , , , full] = before.split(" ");
+  S.moves = [...(S.moves || []), { n: +full || 1, white: turn === "w", san }];
+  renderMoves();
+}
+function renderMoves() {
+  const list = $("#moves-list");
+  if (!list) return;
+  const rows = [];
+  for (const [i, m] of (S.moves || []).entries()) {
+    let row = rows[rows.length - 1];
+    if (!row || row.n !== m.n || (m.white && row.w)) rows.push((row = { n: m.n }));
+    row[m.white ? "w" : "b"] = { san: m.san, last: i === S.moves.length - 1 };
+  }
+  const cell = (m, empty) => (m ? `<span class="mv${m.last ? " last" : ""}">${figurine(m.san)}</span>` : `<span class="mv empty">${empty}</span>`);
+  list.innerHTML = rows.map((r) => `<div class="mrow"><span class="mn">${r.n}</span>${cell(r.w, r.b ? "…" : "")}${cell(r.b, "")}</div>`).join("");
+  list.scrollTop = list.scrollHeight;
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
 // ---------- board size: as big as the window allows ----------
+// While you play the moves go where the board stays biggest: on the right of a wide window, under it in a tall one
+// (the user, 2026-11-24: «в зависимости от ориентации рисуй или справа или снизу»).
+const MOVES_H = 132; // the moves under the board: about four lines
 function layout() {
-  const side = window.innerWidth <= 820 || $(".app").classList.contains("playing") ? 0 : parseInt(getComputedStyle(document.documentElement).getPropertyValue("--side-w")) + 14;
+  const app = $(".app"), playing = app.classList.contains("playing");
   const top = $(".top").getBoundingClientRect().height;
   const strip = $("#board-mode").getBoundingClientRect().height + 6;
-  const availH = window.innerHeight - top - 28 - strip;
-  const availW = window.innerWidth - side - 28;
-  const size = Math.max(240, Math.floor(Math.min(availH, availW) / 8) * 8);
+  const H = window.innerHeight - top - 28 - strip, W = window.innerWidth - 28;
+  const fit = (h, w) => Math.max(240, Math.floor(Math.min(h, w) / 8) * 8);
+  let size, below = false;
+  if (playing) {
+    const right = fit(H, W - MOVES_W - 14), under = fit(H - MOVES_H - 14, W);
+    below = under > right;
+    size = below ? under : right;
+  } else {
+    const side = window.innerWidth <= 820 ? 0 : parseInt(getComputedStyle(document.documentElement).getPropertyValue("--side-w")) + 14;
+    size = fit(H, W - side);
+  }
+  app.classList.toggle("moves-below", playing && below);
   wrap.style.width = wrap.style.height = `${size}px`;
   $("#board-mode").style.width = `${size}px`;
+  const moves = $("#moves");
+  moves.style.width = below ? `${size}px` : "";
+  // on the right: as tall as strip and board; under it: what is left of the window, four lines at least
+  moves.style.height = below ? `${Math.max(MOVES_H, H - size - 14)}px` : `${size + strip - 6}px`;
   cg.redrawAll();
   if (S.phase === "start" || S.phase === "summary") drawCharts();
 }
@@ -652,7 +694,7 @@ function playShow(v) {
   wrap.classList.remove("locked");
   cg.setShapes([]);
   cg.setAutoShapes([]);
-  if (v.new_series) S.marks = [];
+  if (v.new_series) { S.marks = []; S.moves = []; renderMoves(); }
   if (!v.bot) return playStep(v);
   const note = S.note || "";
   S.note = "";
@@ -667,6 +709,7 @@ function playShow(v) {
     if (S.v !== v) return;
     cg.set({ fen: v.fen, lastMove: [v.bot.move.slice(0, 2), v.bot.move.slice(2, 4)], turnColor: v.orientation, check: !!v.check });
     play(v.bot.capture ? "Capture" : "Move");
+    addMove(v.bot.before, v.bot.san);
     setTimeout(() => { if (S.v === v) playStep(v); }, 280);
   }, (v.new_series ? 450 : 400) + (note ? 900 : 0));
 }
@@ -708,6 +751,7 @@ async function commitMove() {
   // the board: your move played; your arrows (✓ green right, ✕ grey extra); what you missed in red with !
   cg.set({ fen: v.fen, lastMove: [mv.from, mv.to], turnColor: v.orientation === "white" ? "black" : "white" });
   play(capture ? "Capture" : "Move");
+  if (v.own?.san && v.own?.before) addMove(v.own.before, v.own.san);
   const res = v.own.result, found = new Set(res.found);
   const user = drawn.map((a) => {
     const extra = res.extra.some((x) => x.from === a.from && x.to === a.to);

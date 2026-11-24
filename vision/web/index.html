@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="/static/vendor/board.lichess-brown.css">
 <link rel="stylesheet" href="/static/vendor/pieces.merida.css">
 <!-- ?v=: the iPad keeps static files cached; bump it (here and on app.js below) when app.css or app.js changes -->
-<link rel="stylesheet" href="/static/app.css?v=15">
+<link rel="stylesheet" href="/static/app.css?v=17">
 </head>
 <body>
 <div class="app">
@@ -37,11 +37,15 @@
       </div>
       <div class="board-wrap" id="board-wrap"><div id="board"></div></div>
     </section>
+    <!-- while you play: the moves of the game fragment, as on Lichess -->
+    <aside class="moves" id="moves" hidden aria-label="Ходы">
+      <div class="moves-list" id="moves-list"></div>
+    </aside>
     <aside class="side">
       <div class="side-body" id="panel"></div>
     </aside>
   </main>
 </div>
-<script type="module" src="/static/app.js?v=27"></script>
+<script type="module" src="/static/app.js?v=29"></script>
 </body>
 </html>

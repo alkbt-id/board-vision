@@ -231,3 +231,34 @@ details.rules p { margin: 8px 0 0; }
 .board-wrap.mode-threats::after { border-color: #e07b00; }
 .board-wrap.mode-move::after { border-color: #2a78d6; }
 .board-wrap.mode-chances::after { border-color: #7b4fd6; }
+
+/* ---------- the moves on the right while you play (Lichess style): number | white | black, the last one lit ---------- */
+.app.playing .layout { grid-template-columns: auto 232px; }
+.moves { align-self: start; display: flex; flex-direction: column; min-height: 0; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.moves-list { flex: 1; min-height: 0; overflow-y: auto; font: 500 15px/1 var(--font-body); font-variant-numeric: tabular-nums;
+  font-variant-emoji: text; scrollbar-width: thin; }
+.mrow { display: grid; grid-template-columns: 40px 1fr 1fr; align-items: stretch; }
+.mrow:nth-child(even) .mv { background: var(--surface-2); }
+.mn { display: flex; align-items: center; justify-content: center; padding: 9px 0; background: var(--surface-3); color: var(--muted);
+  font-size: 13px; }
+.mv { display: flex; align-items: center; padding: 9px 12px; color: var(--ink); white-space: nowrap; }
+.mv.empty { color: var(--muted); }
+.mv.last { background: var(--accent-soft) !important; color: var(--ink); font-weight: 700; }
+/* a tall window: the moves under the board, in lines like a scoresheet — «12. ♘f3 ♗e7  13. …» */
+.app.playing.moves-below .layout { grid-template-columns: auto; grid-template-rows: auto auto; align-content: start; gap: 14px; }
+.moves-below .moves { justify-self: center; }
+.moves-below .moves-list { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 4px 2px; padding: 10px 12px; }
+.moves-below .mrow { display: contents; }
+.moves-below .mn { background: none; padding: 7px 2px 7px 8px; font-size: 14px; }
+.moves-below .mv { padding: 7px 8px; border-radius: 6px; background: none !important; }
+.moves-below .mv.empty:not(:empty) { padding: 7px 4px; }
+.moves-below .mv.empty:empty { display: none; }
+.moves-below .mv.last { background: var(--accent-soft) !important; }
+.fig { display: inline-block; width: 1.4em; height: 1.4em; margin: -0.3em 1px -0.3em -3px; vertical-align: baseline;
+  background: center / contain no-repeat; }
+.fig.K { background-image: url(vendor/fig/K.svg); }
+.fig.Q { background-image: url(vendor/fig/Q.svg); }
+.fig.R { background-image: url(vendor/fig/R.svg); }
+.fig.B { background-image: url(vendor/fig/B.svg); }
+.fig.N { background-image: url(vendor/fig/N.svg); }
