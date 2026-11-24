@@ -99,7 +99,10 @@ const mine = (sq) => !!S.v && cg.state.pieces.get(sq)?.color === S.v.orientation
 const his = (sq) => !!S.v && !!cg.state.pieces.get(sq) && cg.state.pieces.get(sq).color !== S.v.orientation;
 const isCircle = (a) => a.from === a.to;
 const isMoveArrow = (from, to) => S.phase === "draw" && from !== to && mine(from);
-const toShapes = (list) => [...(myMove ? [{ orig: myMove.from, dest: myMove.to, brush: "blue" }] : []),
+const toShapes = (list) => [
+  // steps 2–3 keep your circles of step 1 on the board, pale
+  ...(S.phase === "plan" && S.step1 ? S.step1.marks.filter(isCircle).map((a) => ({ orig: a.from, brush: "paleChance" })) : []),
+  ...(myMove ? [{ orig: myMove.from, dest: myMove.to, brush: "blue" }] : []),
   ...list.map((a) => (isCircle(a) ? { orig: a.from, brush: "chance" } : { orig: a.from, dest: a.to, brush: "orange" }))];
 const NOT_YET = "Его угрозы — после твоего хода";
 // your move drawn in the marking step: a legal one ends the marking, anything else is not a move
@@ -206,10 +209,13 @@ function removeArrow(i, how) {
 }
 function undoArrow() {
   if (arrows.length) return removeArrow(arrows.length - 1, "undo");
-  if (S.phase === "plan" && myMove) rethink();
+  if (S.phase === "plan" && (myMove || S.step1)) rethink();
 }
+// your move taken back: back to step 1 with your circles (the user, 2026-11-24: «баги при отмене - пропадают отметки
+// висящих фигур противника и нельзя вернуться на эту стадию»); a turn that started with no step 1 stays in step 2
 function rethink() {
   if (S.phase !== "plan") return;
+  if (S.step1) return backToMarks();
   log("plan_rethink", { ms: ms(), from: myMove?.from, to: myMove?.to });
   myMove = null;
   syncMode();
@@ -339,7 +345,7 @@ function syncMode() {
   bm.btn.innerHTML = label ? `<span>${label}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>` : "";
   bm.btn.disabled = !act;
   bmAction = act;
-  bm.undo.hidden = !(drawingNow() && (arrows.length || (ph === "plan" && myMove)));
+  bm.undo.hidden = !(drawingNow() && (arrows.length || (ph === "plan" && (myMove || S.step1))));
   const d = dots();
   bm.dots.innerHTML = d.html;
   bm.dots.classList.toggle("dense", d.n > 15);
@@ -721,6 +727,7 @@ function playShow(v) {
   S.reviewShapes = null;
   S.review = null;
   S.pendingChance = null;
+  S.step1 = null;
   wrap.classList.remove("locked");
   cg.setShapes([]);
   cg.setAutoShapes([]);
@@ -765,10 +772,25 @@ function startPlan(v, hints = []) {
 }
 async function commitMove() {
   if (S.phase !== "plan" || !myMove) return;
-  const took = ms(), mv = myMove, drawn = arrows;
+  const took = ms(), mv = myMove, drawn = arrows, st = S.step1;
   S.review = null;
   S.phase = "review";
   const capture = !!cg.state.pieces.get(mv.to);
+  if (st) { // step 1 goes now: his pieces you marked, with the move that may take one of them
+    let a;
+    try { a = await api("/api/play/answer", { play: S.sid, arrows: st.marks, ms: st.ms, move: mv.from + mv.to }); }
+    catch (e) { S.phase = "plan"; flashTask(e.message); return; }
+    S.step1 = null;
+    S.pendingChance = { result: a.result, chances: a.chances || [], marks: st.marks };
+    if (a.phase !== "plan") { // the game is over in that position: no move to make, its review now
+      S.v = a;
+      S.pendingChance = null;
+      S.marks = [...(S.marks || []), !!a.result.ok];
+      arrows = st.marks;
+      if (a.result.ok) return goOn(a);
+      return seriesEnd(a, () => showReview({ result: a.result, threats: [], chances: a.chances || [] }, nextSeries));
+    }
+  }
   let v;
   try { v = await api("/api/play/commit", { play: S.sid, move: mv.from + mv.to, arrows: drawn, ms: took }); }
   catch (e) { S.phase = "plan"; flashTask(e.message); return; }
@@ -841,31 +863,27 @@ function missedArrows(t, mark = false, brush = "red") {
   return list;
 }
 
-// `move`: your own move, drawn at once instead of «Ничего нет» / «Готово» — sent with the marks; when they are
-// right the plan goes on with it, when not the review shows what was missed and the move is dropped
-async function check(move = null) {
+// step 1 done («Ничего нет» / «Готово», or your move drawn at once): on to your move. The circles are not sent yet —
+// they go with «Хожу», so taking the move back returns to them (backToMarks)
+function check(move = null) {
   if (S.phase !== "draw") return;
-  const took = ms();
   setPick(null);
-  if (move) cg.setShapes([...toShapes(arrows), { orig: move.from, dest: move.to, brush: "blue" }]);
-  S.review = null;
-  S.phase = "review";
-  let v;
-  try { v = await api("/api/play/answer", { play: S.sid, arrows, ms: took, ...(move ? { move: move.from + move.to } : {}) }); }
-  catch (e) { S.phase = "draw"; setArrows(arrows); flashTask(`Не получилось: ${e.message}`); return; }
-  S.v = v;
-  if (v.phase === "plan") {
-    // no review now: its result waits for «Хожу», where all your mistakes of the turn are shown together
-    S.pendingChance = { result: v.result, chances: v.chances || [], marks: arrows };
-    startPlan(v, []);
-    if (move) tryMove(move.from, move.to, `${move.how}-early`);
-    return;
-  }
-  // the game is over, there is no move to make: the review now
-  S.marks = [...(S.marks || []), !!v.result.ok];
-  const r = { result: v.result, threats: [], chances: v.chances || [] };
-  if (v.result.ok) return goOn(v);
-  seriesEnd(v, () => showReview(r, nextSeries));
+  S.step1 = { marks: arrows, ms: ms() };
+  myMove = null;
+  arrows = [];
+  S.shownAt = performance.now();
+  lastActive = performance.now();
+  S.phase = "plan";
+  setArrows([]);
+  if (move) tryMove(move.from, move.to, `${move.how}-early`);
+}
+function backToMarks() {
+  const st = S.step1;
+  log("plan_rethink", { ms: ms(), from: myMove?.from, to: myMove?.to, back: "marks" });
+  S.step1 = null;
+  myMove = null;
+  S.phase = "draw";
+  setArrows(st.marks);
 }
 // a clean check is not stopped on: its dot fills and the game goes on (a new series says its length in the strip);
 // only a check with a mistake stops for the review
