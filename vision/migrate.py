@@ -9,6 +9,9 @@ History:
   3  + an arrow from a piece behind an attacker (a battery: Bc4 behind d5 on e6) counts (2026-11-24)
   4  + chances: what the user can win himself, marked in the same step (2026-11-24). Answers given before were not
      asked for them and are checked without them (their stored result has no "chances": true)
+  5  the check of your own move: when your move takes and the exchange there does not lose for you, his taking back
+     is not a threat (2026-11-24: Bxh4 gxh4 Qxh4 was marked as «missed»). Own-move positions are checked again too,
+     keeping the engine's tactics they carry
 The engine's tactics (forced mates in 2–3, winning checks: threats.add_tactics) are not the rule's: a position keeps
 the ones it has when its key is computed again, and an answer is checked with them only if it was asked for them
 (its stored result has "tactics": true).
@@ -20,7 +23,31 @@ import chess
 
 from . import events, store, threats
 
-RULE_VERSION = "4"
+RULE_VERSION = "5"
+
+
+def _own_moves() -> int:
+    """The checks of the user's own moves against the current rule: the capture rule's part is computed again, the
+    engine's tactics («attacks») are kept as stored. Returns the answers checked again."""
+    n = 0
+    for row in store.q("SELECT id, fen, move, answer FROM items WHERE source = 'ownmove'"):
+        before = chess.Board(row["fen"])
+        move = chess.Move.from_uci(row["move"])
+        if move not in before.legal_moves:
+            continue
+        key = threats.own_move(before, move)
+        key["attacks"] = json.loads(row["answer"] or "{}").get("attacks") or []
+        store.run("UPDATE items SET answer=?, n_threats=? WHERE id=?",
+                  (json.dumps(key, ensure_ascii=False), len(key["threats"]), row["id"]))
+        after = before.copy(stack=False)
+        after.push(move)
+        for a in store.q("SELECT id, arrows FROM attempts WHERE item=?", (row["id"],)):
+            res = threats.check_own(key, json.loads(a["arrows"] or "[]"), after)
+            store.run("UPDATE attempts SET n_threats=?, found=?, missed=?, extra=?, ok=?, result=? WHERE id=?",
+                      (len(key["threats"]) + len(key["attacks"]), len(res["found"]), len(res["missed"]),
+                       len(res["extra"]), int(res["ok"]), json.dumps(res, ensure_ascii=False), a["id"]))
+            n += 1
+    return n
 
 
 def run() -> None:
@@ -58,6 +85,7 @@ def run() -> None:
         rescored += 1
         to_ok += bool(res["ok"]) and not a["ok"]
         to_wrong += (not res["ok"]) and bool(a["ok"])
+    rescored += _own_moves()
     store.meta_set("rule_version", RULE_VERSION)
     from . import rating
     rating.clear_cache()

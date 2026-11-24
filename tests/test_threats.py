@@ -263,3 +263,14 @@ def test_your_forced_mate_is_a_chance_found_by_a_circle_on_his_king_or_by_playin
     assert [t["tactic"] for t in key["chances"]] == ["mate"]
     assert threats.check(key, [{"from": "g8", "to": "g8"}], after)["ok"]
     assert threats.check(key, [], after, played={"from": "a1", "to": "a7"})["ok"]
+
+
+def test_taking_back_after_your_own_fair_capture_is_not_a_threat():
+    # the user's game 2026-11-24: Bxh4 (a knight), and gxh4 Qxh4 leaves him a pawn up — not a «missed» threat
+    before = chess.Board("r1bqk1nr/ppp1bppp/2n5/3p4/4p2N/3P2P1/PPP1PPBP/RNBQ1RK1 b kq - 0 1")
+    key = threats.own_move(before, chess.Move.from_uci("e7h4"))
+    assert [t["target"] for t in key["threats"]] == ["e4"]
+    # a capture that loses the exchange keeps the threat: the queen takes a pawn defended by a pawn
+    before = chess.Board("4k3/8/2p5/3p4/8/8/3Q4/4K3 w - - 0 1")
+    key = threats.own_move(before, chess.Move.from_uci("d2d5"))
+    assert [t["target"] for t in key["threats"]] == ["d5"]

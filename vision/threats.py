@@ -409,6 +409,11 @@ def own_move(before: chess.Board, move: chess.Move) -> dict:
     if b.is_game_over():
         return {"threats": [], "attacks": [], "defended": [], "exchanges": {}}
     key = opponent_key(b)
+    if before.is_capture(move) and not before.is_en_passant(move) and capture_gain(before, move) >= 0:
+        # your capture starts an exchange you do not lose: his taking back there is its second half, not a threat
+        # (the user, 2026-11-24, after Bxh4 gxh4 Qxh4: «я взял слоном коня!»)
+        to = chess.square_name(move.to_square)
+        key["threats"] = [t for t in key["threats"] if t["target"] != to or t["mate"]]
     key["attacks"] = []
     return key
 
