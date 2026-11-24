@@ -94,7 +94,8 @@ def _view(p: dict, extra: dict | None = None) -> dict:
 def _new_series(p: dict) -> dict:
     """The next series. With moves to play (level 2+) it starts only where your side is not lost with best play:
     traps and hard positions yes, positions lost in advance (most turned-around puzzles: the blow has landed) no.
-    If none is found in TRIES picks, the last one is a single check that does not move the level."""
+    A lost start that is a Lichess puzzle or a repeat becomes a single check between series (it does not move the
+    level), so puzzles and repeats keep coming at any level; another lost start is skipped (TRIES picks at most)."""
     single = False
     for attempt in range(TRIES):
         it = _pick_start(p)
@@ -108,10 +109,11 @@ def _new_series(p: dict) -> dict:
         e = engine.evaluate(board, board.turn)
         if e is None or e >= NOT_LOST:
             break
-        if it["repeat"]:
-            p["repeats"] -= 1  # still due: it comes back another time
-        if attempt == TRIES - 1:
+        if it["repeat"] or it["source"] == "puzzle" or attempt == TRIES - 1:
+            # a Lichess puzzle (the blow has landed) or a repeat: still worth seeing, as one check between
+            # series, not as a game to play on; it does not move the level
             single = True
+            break
     p["user"] = not before.turn
     p["board"] = board
     p["series_no"] += 1
