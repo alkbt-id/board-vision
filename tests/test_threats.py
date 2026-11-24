@@ -212,3 +212,18 @@ def test_your_move_drawn_at_once_takes_a_chance():
     assert threats.check(answer, [], after, played={"from": "b7", "to": "b8"})["ok"]
     other = threats.check(answer, [], after, played={"from": "g1", "to": "f2"})
     assert other["missed"] == ["b8"] and other["extra"] == []
+
+
+def test_a_chance_is_marked_with_a_circle_on_his_piece():
+    after = chess.Board("4k3/8/8/n7/8/8/8/R3K3 w - - 0 1")  # the knight on a5 hangs to the rook
+    answer = threats.analyse(after)
+    assert threats.check(answer, [{"from": "a5", "to": "a5"}], after)["ok"]
+    wrong = threats.check(answer, [{"from": "a5", "to": "a5"}, {"from": "e8", "to": "e8"}], after)
+    assert wrong["found"] == ["a5"] and wrong["extra"] == [{"from": "e8", "to": "e8", "why": "not_winnable"}]
+
+
+def test_a_mate_in_one_is_marked_with_a_circle_on_his_king():
+    after = chess.Board("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1")  # Ra8 mates
+    answer = threats.analyse(after)
+    assert any(t["mate"] for t in answer["chances"])
+    assert threats.check(answer, [{"from": "g8", "to": "g8"}], after)["ok"]

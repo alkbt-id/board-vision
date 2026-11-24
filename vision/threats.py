@@ -14,7 +14,8 @@ A position where the user is in check is not a drill position (`analyse` returns
 
 Chances (2026-11-24) are the same rule turned round: what the user himself can win right now — his captures that
 come out ahead after the whole exchange, his pawn walking in to queen, his mate in one. They are marked in the same
-step, with arrows from his pieces.
+step with a circle on the opponent's piece (his king for a mate); a mate or a queening on an empty square is found
+by playing it. An arrow from the user's own piece is his move, not a mark.
 
 The user answers with arrows "who takes -> whom": an arrow counts when it goes from a piece that can take (or
 mate) to the threatened square; the opposite direction counts too, unless it is itself a threat or a chance.
@@ -282,7 +283,11 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
      "ok": bool, "n": threats + chances asked, "chances": with_chances,
      "items": [{"target", "found", "text", "detail"}], "extras": [{"text", "detail"}]}
     `played`: the user's own move ({"from", "to"}), drawn instead of finishing the marking: a chance it takes is
-    found (he plays it), and it is never an extra arrow."""
+    found (he plays it), and it is never an extra arrow.
+    A circle is an arrow of no length ({"from": "e5", "to": "e5"}): it marks a chance on the opponent's piece there
+    (on his king: a mate); a circle where nothing can be won is extra ("why": "not_winnable")."""
+    circles = [a.get("from") for a in arrows if a.get("from") and a.get("from") == a.get("to")]
+    arrows = [a for a in arrows if not (a.get("from") and a.get("from") == a.get("to"))]
     keys = [*answer["threats"], *((answer.get("chances") or []) if with_chances else [])]
     by_square: dict[str, list[dict]] = {}
     for t in keys:
@@ -313,6 +318,15 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
         for t in answer.get("chances") or []:
             if played["to"] in (t.get("targets") or [t["target"]]) and played["from"] in t["attackers"]:
                 found.add(t["target"])
+    king = after.king(not after.turn)
+    his_king = chess.square_name(king) if king is not None else None
+    for sq in circles:
+        t = next((t for t in (answer.get("chances") or []) if with_chances and
+                  (sq in (t.get("targets") or [t["target"]]) or (t["mate"] and sq == his_king))), None)
+        if t:
+            found.add(t["target"])
+        else:
+            extra.append({"from": sq, "to": sq, "why": "not_winnable"})
     missed = [t["target"] for t in keys if t["target"] not in found]
     items = [{"target": t["target"], "found": t["target"] in found, "text": describe(t, after),
               "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in keys]

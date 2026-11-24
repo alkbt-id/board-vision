@@ -1,7 +1,7 @@
 // «Видение доски» — the drill screen.
 // A position appears, the opponent makes his move, the user draws arrows "who takes -> whom" on every piece of his
-// that is now under attack and from his own pieces to every piece of the opponent he can win now (or presses
-// «Ничего нет»), the server checks and the board shows the review.
+// that is now under attack, puts a circle on every piece of the opponent he can win now (or presses «Ничего нет», or
+// draws his own move at once), the server checks and the board shows the review.
 // Every action goes to the event log (POST /api/log) so a session can be watched live and analysed later.
 import { Chessground } from "./vendor/chessground/chessground.min.js";
 
@@ -91,14 +91,34 @@ let arrows = [];
 let myMove = null; // «проверь свой ход»: your own move, the first arrow you draw (blue); the rest are his replies
 const drawingNow = () => S.phase === "draw" || S.phase === "plan";
 const sameLine = (a, b) => (a.from === b.from && a.to === b.to) || (a.from === b.to && a.to === b.from);
-// an arrow from your own piece, while you mark threats, is a chance of yours: purple; from his piece — orange
+// The marking step: an arrow from his piece is a threat (orange); a circle on his piece is a chance of yours — you
+// can win it (purple; a tap on it, or the right button on the Mac; on his king: a mate); an arrow from your own piece
+// is your move (blue): it ends the marking, as «Ничего нет» / «Готово» would, and the plan goes on with it.
+// A circle is kept as an arrow of no length: {from: "e5", to: "e5"}.
 const mine = (sq) => !!S.v && cg.state.pieces.get(sq)?.color === S.v.orientation;
-const brushOf = (from, pale = false) => (S.phase === "draw" && mine(from) ? (pale ? "paleChance" : "chance") : pale ? "paleOrange" : "orange");
-// in the marking step an arrow from your piece to an empty square that is a legal move is your move, drawn at once:
-// it ends the marking (as «Ничего нет» / «Готово» would) and the plan goes on with it; a capture stays a chance mark
-const isMoveArrow = (from, to) => S.phase === "draw" && mine(from) && !cg.state.pieces.get(to) && (S.v?.dests?.[from] || []).includes(to);
+const his = (sq) => !!S.v && !!cg.state.pieces.get(sq) && cg.state.pieces.get(sq).color !== S.v.orientation;
+const isCircle = (a) => a.from === a.to;
+const isMoveArrow = (from, to) => S.phase === "draw" && from !== to && mine(from);
 const toShapes = (list) => [...(myMove ? [{ orig: myMove.from, dest: myMove.to, brush: "blue" }] : []),
-  ...list.map((a) => ({ orig: a.from, dest: a.to, brush: brushOf(a.from) }))];
+  ...list.map((a) => (isCircle(a) ? { orig: a.from, brush: "chance" } : { orig: a.from, dest: a.to, brush: "orange" }))];
+// your move drawn in the marking step: a legal one ends the marking, anything else is not a move
+function drawnMove(from, to, how) {
+  if ((S.v?.dests?.[from] || []).includes(to)) { check({ from, to, how }); return; }
+  setArrows(arrows);
+  flashTask("Это не ход");
+}
+// a tap on his piece in the marking step: the circle on it on or off; true when it is on now
+function toggleCircle(sq, how) {
+  const i = arrows.findIndex((a) => isCircle(a) && a.from === sq);
+  if (i >= 0) {
+    log("arrow_del", { from: sq, to: sq, ms: ms(), how });
+    setArrows(arrows.filter((_, j) => j !== i));
+    return false;
+  }
+  log("arrow_add", { from: sq, to: sq, ms: ms(), how });
+  setArrows([...arrows, { from: sq, to: sq }]);
+  return true;
+}
 // the first arrow in a plan: your move, if it is one
 function tryMove(from, to, how) {
   const ok = (S.v?.dests?.[from] || []).includes(to);
@@ -123,7 +143,7 @@ function setArrows(list) {
   renderArrows();
 }
 // chessground's own right-button drawing: compare with the known arrows; a new arrow over an existing line
-// (the same one reversed) takes that line off; circles are dropped (only arrows count)
+// (the same one reversed) takes that line off; a circle counts only on his piece in the marking step
 function syncArrows(shapes, how) {
   if (!drawingNow()) {
     // the review before your move: a right-button arrow starts your move at once
@@ -139,10 +159,11 @@ function syncArrows(shapes, how) {
   }
   // your move drawn again (chessground took the blue arrow off or recoloured it): take the move back
   if (S.phase === "plan" && myMove && !shapes.some((s) => s.brush === "blue")) { rethink(); return; }
-  let now = shapes.filter((s) => s.dest && s.orig !== s.dest && s.brush !== "blue").map((s) => ({ from: s.orig, to: s.dest }));
+  let now = shapes.filter((s) => s.brush !== "blue" && (s.dest ? s.orig !== s.dest : S.phase === "draw" && his(s.orig)))
+    .map((s) => ({ from: s.orig, to: s.dest || s.orig }));
   if (S.phase === "draw") { // your move drawn with the right button: the marking ends with it
     const mv = now.find((x) => !arrows.some((b) => x.from === b.from && x.to === b.to) && isMoveArrow(x.from, x.to));
-    if (mv) { check({ ...mv, how }); return; }
+    if (mv) { drawnMove(mv.from, mv.to, how); return; }
   }
   if (S.phase === "plan" && !myMove) {
     const a = now.find((x) => !arrows.some((b) => x.from === b.from && x.to === b.to));
@@ -160,7 +181,7 @@ function syncArrows(shapes, how) {
   setArrows(next);
 }
 function toggleArrow(from, to, how, extra = {}) {
-  if (isMoveArrow(from, to)) { check({ from, to, how }); return; }
+  if (isMoveArrow(from, to)) { drawnMove(from, to, how); return; }
   if (S.phase === "plan" && !myMove) { tryMove(from, to, how); return; }
   if (S.phase === "plan" && sameLine({ from, to }, myMove)) { rethink(); return; } // your move drawn again: take it back
   const twin = arrows.find((b) => sameLine({ from, to }, b));
@@ -202,12 +223,13 @@ const renderArrows = () => syncMode();
 // on a left click): a drag draws an arrow; a tap on one square, then on another, does the same.
 const keyAt = (x, y) => { cg.state.dom.bounds.clear(); return cg.getKeyAtDomPos([x, y]); };
 const drag = { from: null, id: null, moved: false, trail: [] };
-function setPick(key) {
+function setPick(key, circled = false) {
   S.pick = key;
-  cg.set({ highlight: { custom: key ? new Map([[key, "from-pick"]]) : new Map() } });
+  S.pickCircled = circled; // the tap on his piece that started this pick put a circle on it (the circle shows it)
+  cg.set({ highlight: { custom: key && !circled ? new Map([[key, "from-pick"]]) : new Map() } });
 }
 function preview(from, to) {
-  cg.setAutoShapes(from && to && from !== to ? [{ orig: from, dest: to, brush: (S.phase === "plan" && !myMove) || isMoveArrow(from, to) ? "paleBlue" : brushOf(from, true) }] : []);
+  cg.setAutoShapes(from && to && from !== to ? [{ orig: from, dest: to, brush: (S.phase === "plan" && !myMove) || isMoveArrow(from, to) ? "paleBlue" : "paleOrange" }] : []);
 }
 // Where a finger meant to end. A finger hides the square and the lift often slides on by a square (the user aimed
 // d2→e2 and got d2→f2): take the square the finger was on a moment before it left the glass, and if the arrow
@@ -264,10 +286,20 @@ wrap.addEventListener("pointerup", (e) => {
   if (!drawingNow() || !from) return;
   const how = e.pointerType === "touch" ? "touch" : e.pointerType === "pen" ? "pen" : "mouse-left";
   if (to && to !== from) { setPick(null); toggleArrow(from, to, `${how}-drag`, to !== upKey ? { lifted_on: upKey } : {}); return; }
-  // a tap
-  if (!S.pick) setPick(from);
-  else if (S.pick === from) setPick(null);
-  else { const a = S.pick; setPick(null); toggleArrow(a, from, `${how}-tap`); }
+  // a tap. In the marking step a tap on his piece puts a circle on it (a chance) or takes it off, and starts an arrow
+  // from it: a tap next on your piece or an empty square turns that circle into the arrow (a threat)
+  const tapHis = S.phase === "draw" && his(from);
+  if (S.pick === from) { if (S.pickCircled) toggleCircle(from, `${how}-tap`); setPick(null); return; }
+  if (tapHis && (!S.pick || his(S.pick))) {
+    const on = toggleCircle(from, `${how}-tap`);
+    setPick(on ? from : null, on);
+    return;
+  }
+  if (!S.pick) { setPick(from); return; }
+  const a = S.pick, circled = S.pickCircled;
+  setPick(null);
+  if (circled) setArrows(arrows.filter((x) => !(isCircle(x) && x.from === a))); // the circle becomes the arrow
+  toggleArrow(a, from, `${how}-tap`);
 }, { capture: true });
 wrap.addEventListener("pointercancel", () => { drag.from = drag.id = null; preview(null); }, { capture: true });
 // chessground listens to mouse/touch events: keep the left button and touches away from it
@@ -340,6 +372,11 @@ const MARK = {
 };
 function marked(shape, kind) {
   return badge(shape, MARK[kind].fill, MARK[kind].icon);
+}
+// the mark of a circle: in the top right corner of its square, smaller
+function cornerMark(shape, kind) {
+  const m = MARK[kind];
+  return { ...shape, customSvg: { html: `<g transform="translate(80 20) scale(.8)"><circle r="19" fill="${m.fill}" stroke="#fff" stroke-width="4"/>${m.icon}</g>` } };
 }
 // a step of a line, numbered: 1 his move, 2 your answer, 3 his…
 function numbered(shape, n, fill) {
@@ -514,7 +551,7 @@ async function loadProgress() {
 
 const RULES = `
   <details class="rules"><summary>Как это работает</summary>
-    <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле, и на поле мата в один ход — это угрозы (оранжевые). И то же самое для себя: от твоей фигуры к его фигуре, которую ты можешь выиграть прямо сейчас, — это шансы (фиолетовые). Нечего отмечать — «Ничего нет» или сразу нарисуй свой ход на пустое поле: отметки на этом заканчиваются, дальше отмечаешь его ответы.</p>
+    <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле, и на поле мата в один ход — это угрозы (оранжевые). И то же самое для себя: тапни его фигуру, которую ты можешь выиграть прямо сейчас (на Mac — или правый клик), — на ней появится фиолетовый кружок, это шанс; мат в один ход — кружок на его короле. Стрелка от твоей фигуры — это твой ход: отметки на нём заканчиваются, дальше отмечаешь его ответы. Нечего отмечать — «Ничего нет» или сразу рисуй ход.</p>
     <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — ↶ над доской, Backspace или та же стрелка ещё раз. Закончил — кнопка в цветной полосе над доской или Enter.</p>
     <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
     <p>Серия: соперник ходит — отмечаешь угрозы — ходишь сам — отвечает бот уровня 1300 — снова отмечаешь… Серия без промахов делает следующую на ход длиннее, две серии с промахами подряд — на ход короче. Длина 1 — одна позиция.</p>
@@ -695,6 +732,17 @@ function verdict(res, n) {
   if (!res.missed.length) return "Лишняя стрелка";
   return `${n - res.missed.length} из ${n}`;
 }
+// a chance of yours on the board: a circle on his piece and an arrow from your piece that wins it (a mate or a
+// queening on an empty square: the move itself); `mark`: the «!» of a missed one; `pale`: a hint
+function chanceShapes(t, mark = false, pale = false) {
+  const best = { orig: t.best.slice(0, 2), dest: t.best.slice(2, 4) };
+  if (!t.promotion && cg.state.pieces.get(t.target)) {
+    const circle = { orig: t.target, brush: pale ? "paleChance" : "red" };
+    return [mark ? cornerMark(circle, "miss") : circle, { ...best, brush: pale ? "paleChance" : "paleRed" }];
+  }
+  const arrow = { ...best, brush: pale ? "paleChance" : "red" };
+  return [mark ? marked(arrow, "miss") : arrow];
+}
 // a threat on the board: an arrow from every piece that can take there (a mate: the mating move);
 // `mark`: the first one gets the «!» of a missed threat
 function missedArrows(t, mark = false, brush = "red") {
@@ -721,7 +769,7 @@ async function check(move = null) {
   const r = { result: v.result, threats: v.threats, chances: v.chances || [] };
   if (v.phase === "plan") {
     const hints = [...v.threats.flatMap((t) => missedArrows(t, false, "paleOrange")),
-      ...r.chances.flatMap((t) => missedArrows(t, false, "paleChance"))];
+      ...r.chances.flatMap((t) => chanceShapes(t, false, true))];
     if (v.result.ok) { // all found: no stop, your move at once (or the one you have drawn already)
       startPlan(v, hints);
       if (move) tryMove(move.from, move.to, `${move.how}-early`);
@@ -789,11 +837,13 @@ function showReview(r, onNext) {
   wrap.classList.add("locked");
   const res = r.result, found = new Set(res.found);
   const userShapes = arrows.map((a) => {
-    const right = (found.has(a.to) || found.has(a.from)) && !res.extra.some((x) => x.from === a.from && x.to === a.to);
+    const right = !res.extra.some((x) => x.from === a.from && x.to === a.to);
+    if (isCircle(a)) return cornerMark({ orig: a.from, brush: right ? "green" : "grey" }, right ? "ok" : "extra");
     return marked({ orig: a.from, dest: a.to, brush: right ? "green" : "grey" }, right ? "ok" : "extra");
   });
   const auto = [];
-  for (const t of [...r.threats, ...r.chances]) if (!found.has(t.target)) auto.push(...missedArrows(t, true));
+  for (const t of r.threats) if (!found.has(t.target)) auto.push(...missedArrows(t, true));
+  for (const t of r.chances) if (!found.has(t.target)) auto.push(...chanceShapes(t, true));
   S.reviewShapes = userShapes;
   cg.setShapes(userShapes);
   cg.setAutoShapes(auto);

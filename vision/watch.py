@@ -13,7 +13,8 @@ from . import config
 from .session import MOTIF_NAME
 
 SOURCE = {"own": "твоя партия", "db": "чужая партия", "puzzle": "задача Lichess"}
-WHY = {"defended": "фигура защищена", "not_attacked": "не под ударом", "wrong_attacker": "бьёт не эта фигура"}
+WHY = {"defended": "фигура защищена", "not_attacked": "не под ударом", "wrong_attacker": "бьёт не эта фигура",
+       "not_winnable": "её не выиграть"}
 
 
 def sec(ms) -> str:
