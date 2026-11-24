@@ -94,6 +94,9 @@ const sameLine = (a, b) => (a.from === b.from && a.to === b.to) || (a.from === b
 // an arrow from your own piece, while you mark threats, is a chance of yours: purple; from his piece — orange
 const mine = (sq) => !!S.v && cg.state.pieces.get(sq)?.color === S.v.orientation;
 const brushOf = (from, pale = false) => (S.phase === "draw" && mine(from) ? (pale ? "paleChance" : "chance") : pale ? "paleOrange" : "orange");
+// in the marking step an arrow from your piece to an empty square that is a legal move is your move, drawn at once:
+// it ends the marking (as «Ничего нет» / «Готово» would) and the plan goes on with it; a capture stays a chance mark
+const isMoveArrow = (from, to) => S.phase === "draw" && mine(from) && !cg.state.pieces.get(to) && (S.v?.dests?.[from] || []).includes(to);
 const toShapes = (list) => [...(myMove ? [{ orig: myMove.from, dest: myMove.to, brush: "blue" }] : []),
   ...list.map((a) => ({ orig: a.from, dest: a.to, brush: brushOf(a.from) }))];
 // the first arrow in a plan: your move, if it is one
@@ -137,6 +140,10 @@ function syncArrows(shapes, how) {
   // your move drawn again (chessground took the blue arrow off or recoloured it): take the move back
   if (S.phase === "plan" && myMove && !shapes.some((s) => s.brush === "blue")) { rethink(); return; }
   let now = shapes.filter((s) => s.dest && s.orig !== s.dest && s.brush !== "blue").map((s) => ({ from: s.orig, to: s.dest }));
+  if (S.phase === "draw") { // your move drawn with the right button: the marking ends with it
+    const mv = now.find((x) => !arrows.some((b) => x.from === b.from && x.to === b.to) && isMoveArrow(x.from, x.to));
+    if (mv) { check({ ...mv, how }); return; }
+  }
   if (S.phase === "plan" && !myMove) {
     const a = now.find((x) => !arrows.some((b) => x.from === b.from && x.to === b.to));
     if (a) { tryMove(a.from, a.to, how); now = now.filter((x) => x !== a); }
@@ -153,6 +160,7 @@ function syncArrows(shapes, how) {
   setArrows(next);
 }
 function toggleArrow(from, to, how, extra = {}) {
+  if (isMoveArrow(from, to)) { check({ from, to, how }); return; }
   if (S.phase === "plan" && !myMove) { tryMove(from, to, how); return; }
   if (S.phase === "plan" && sameLine({ from, to }, myMove)) { rethink(); return; } // your move drawn again: take it back
   const twin = arrows.find((b) => sameLine({ from, to }, b));
@@ -199,7 +207,7 @@ function setPick(key) {
   cg.set({ highlight: { custom: key ? new Map([[key, "from-pick"]]) : new Map() } });
 }
 function preview(from, to) {
-  cg.setAutoShapes(from && to && from !== to ? [{ orig: from, dest: to, brush: S.phase === "plan" && !myMove ? "paleBlue" : brushOf(from, true) }] : []);
+  cg.setAutoShapes(from && to && from !== to ? [{ orig: from, dest: to, brush: (S.phase === "plan" && !myMove) || isMoveArrow(from, to) ? "paleBlue" : brushOf(from, true) }] : []);
 }
 // Where a finger meant to end. A finger hides the square and the lift often slides on by a square (the user aimed
 // d2→e2 and got d2→f2): take the square the finger was on a moment before it left the glass, and if the arrow
@@ -506,7 +514,7 @@ async function loadProgress() {
 
 const RULES = `
   <details class="rules"><summary>Как это работает</summary>
-    <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле, и на поле мата в один ход — это угрозы (оранжевые). И то же самое для себя: от твоей фигуры к его фигуре, которую ты можешь выиграть прямо сейчас, — это шансы (фиолетовые). Нечего отмечать — «Ничего нет».</p>
+    <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле, и на поле мата в один ход — это угрозы (оранжевые). И то же самое для себя: от твоей фигуры к его фигуре, которую ты можешь выиграть прямо сейчас, — это шансы (фиолетовые). Нечего отмечать — «Ничего нет» или сразу нарисуй свой ход на пустое поле: отметки на этом заканчиваются, дальше отмечаешь его ответы.</p>
     <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — ↶ над доской, Backspace или та же стрелка ещё раз. Закончил — кнопка в цветной полосе над доской или Enter.</p>
     <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
     <p>Серия: соперник ходит — отмечаешь угрозы — ходишь сам — отвечает бот уровня 1300 — снова отмечаешь… Серия без промахов делает следующую на ход длиннее, две серии с промахами подряд — на ход короче. Длина 1 — одна позиция.</p>
@@ -696,22 +704,29 @@ function missedArrows(t, mark = false, brush = "red") {
   return list;
 }
 
-async function check() {
+// `move`: your own move, drawn at once instead of «Ничего нет» / «Готово» — sent with the marks; when they are
+// right the plan goes on with it, when not the review shows what was missed and the move is dropped
+async function check(move = null) {
   if (S.phase !== "draw") return;
   const took = ms();
   setPick(null);
+  if (move) cg.setShapes([...toShapes(arrows), { orig: move.from, dest: move.to, brush: "blue" }]);
   S.review = null;
   S.phase = "review";
   let v;
-  try { v = await api("/api/play/answer", { play: S.sid, arrows, ms: took }); }
-  catch (e) { S.phase = "draw"; flashTask(`Не получилось: ${e.message}`); return; }
+  try { v = await api("/api/play/answer", { play: S.sid, arrows, ms: took, ...(move ? { move: move.from + move.to } : {}) }); }
+  catch (e) { S.phase = "draw"; setArrows(arrows); flashTask(`Не получилось: ${e.message}`); return; }
   S.v = v;
   S.marks = [...(S.marks || []), !!v.result.ok];
   const r = { result: v.result, threats: v.threats, chances: v.chances || [] };
   if (v.phase === "plan") {
     const hints = [...v.threats.flatMap((t) => missedArrows(t, false, "paleOrange")),
       ...r.chances.flatMap((t) => missedArrows(t, false, "paleChance"))];
-    if (v.result.ok) return startPlan(v, hints); // all found: no stop, your move at once
+    if (v.result.ok) { // all found: no stop, your move at once (or the one you have drawn already)
+      startPlan(v, hints);
+      if (move) tryMove(move.from, move.to, `${move.how}-early`);
+      return;
+    }
     const toPlan = (how) => { log("next_click", { ms: ms(), to: "plan", how }); startPlan(v, hints); };
     showReview(r, () => toPlan("button"));
     S.review.toPlan = toPlan;

@@ -80,7 +80,8 @@ def play_start(_: dict) -> dict:
 
 
 def play_answer(body: dict) -> dict:
-    return play.answer(str(body["play"]), list(body.get("arrows") or []), int(body.get("ms") or 0))
+    return play.answer(str(body["play"]), list(body.get("arrows") or []), int(body.get("ms") or 0),
+                       str(body.get("move") or ""))
 
 
 def play_commit(body: dict) -> dict:

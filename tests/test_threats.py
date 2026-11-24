@@ -202,3 +202,13 @@ def test_threat_and_chance_on_the_same_line_go_by_the_arrow_direction():
     assert chance["found"] == ["a5"] and chance["missed"] == ["a1"]
     both = threats.check(answer, [{"from": "a5", "to": "a1"}, {"from": "a1", "to": "a5"}], after)
     assert both["ok"] and both["n"] == 2
+
+
+def test_your_move_drawn_at_once_takes_a_chance():
+    # the pawn on b7 can queen (a chance); drawing b7-b8 as your move instead of marking it counts as found
+    after = chess.Board("6k1/1P6/8/8/8/8/8/6K1 w - - 0 1")
+    answer = threats.analyse(after)
+    assert [t["target"] for t in answer["chances"]] == ["b8"]
+    assert threats.check(answer, [], after, played={"from": "b7", "to": "b8"})["ok"]
+    other = threats.check(answer, [], after, played={"from": "g1", "to": "f2"})
+    assert other["missed"] == ["b8"] and other["extra"] == []

@@ -81,7 +81,7 @@ def _view(p: dict, extra: dict | None = None) -> dict:
         "orientation": _side(p["user"]),
         "series": {"no": p["series_no"], "length": sr["length"], "checks": sr["checks"], "own": sr.get("own", 0)},
     }
-    if p["phase"] == "plan":
+    if p["phase"] in ("plan", "check"):  # in a check too: your move drawn at once ends the marking
         d: dict[str, list[str]] = {}
         for m in board.legal_moves:
             d.setdefault(chess.square_name(m.from_square), []).append(chess.square_name(m.to_square))
@@ -195,14 +195,21 @@ def _end_series(p: dict, game_over: bool = False, lost: bool = False) -> dict:
     return out
 
 
-def answer(pid: str, arrows: list[dict], ms: int) -> dict:
+def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
+    """The user's marks after the opponent's move. `move`: his own move, drawn at once instead of «Ничего нет» /
+    «Готово» — it ends the marking, and a chance it takes counts as found (the client then goes on to the plan)."""
     p = PLAYS[pid]
     if p["phase"] != "check":
         raise ValueError("сейчас не проверка")
     board: chess.Board = p["board"]
     key = threats.analyse(board) or {"threats": [], "defended": [], "chances": []}
     arrows = [{"from": str(a.get("from")), "to": str(a.get("to"))} for a in arrows[:30] if isinstance(a, dict)]
-    result = threats.check(key, arrows, board)
+    played = None
+    if move:
+        mv = chess.Move.from_uci(move[:4])
+        if any(m.from_square == mv.from_square and m.to_square == mv.to_square for m in board.legal_moves):
+            played = {"from": move[:2], "to": move[2:4]}
+    result = threats.check(key, arrows, board, played=played)
     chances = key.get("chances") or []
     item_id = p["item"]
     if item_id is None:  # a position reached in play: store it like a pool position
@@ -221,7 +228,8 @@ def answer(pid: str, arrows: list[dict], ms: int) -> dict:
     events.log("answer", session=pid, index=p["checks"] - 1, size=CHECKS, item=item_id, ok=result["ok"],
                threats=len(key["threats"]), chances=len(chances), found=result["found"], missed=result["missed"],
                extra=result["extra"],
-               arrows=arrows, ms=ms, series=p["series_no"], step=sr["checks"])
+               arrows=arrows, ms=ms, series=p["series_no"], step=sr["checks"],
+               **({"move": played["from"] + played["to"]} if played else {}))
     extra: dict = {"result": result, "threats": key["threats"], "chances": chances}
     if sr["checks"] >= sr["length"] or board.is_game_over():
         extra["series_end"] = _end_series(p, game_over=board.is_game_over())

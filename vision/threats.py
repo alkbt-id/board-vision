@@ -273,13 +273,16 @@ def explain_extra(extra: dict, answer: dict, after: chess.Board) -> dict:
     return {"text": f"{head}: тут нечего брать", "detail": ""}
 
 
-def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bool = True) -> dict:
+def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bool = True,
+          played: dict | None = None) -> dict:
     """Compare the user's arrows ({"from": "d8", "to": "d4"}) with the answer key: his threats and, with
     `with_chances` (answers given before 2026-11-24 were not asked for them), the user's own chances.
 
     {"found": ["d4"], "missed": ["f7"], "extra": [{"from", "to", "why": "defended" | "not_attacked" | "wrong_attacker"}],
      "ok": bool, "n": threats + chances asked, "chances": with_chances,
-     "items": [{"target", "found", "text", "detail"}], "extras": [{"text", "detail"}]}"""
+     "items": [{"target", "found", "text", "detail"}], "extras": [{"text", "detail"}]}
+    `played`: the user's own move ({"from", "to"}), drawn instead of finishing the marking: a chance it takes is
+    found (he plays it), and it is never an extra arrow."""
     keys = [*answer["threats"], *((answer.get("chances") or []) if with_chances else [])]
     by_square: dict[str, list[dict]] = {}
     for t in keys:
@@ -306,6 +309,10 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
         else:
             why = "not_attacked"
         extra.append({"from": a, "to": b, "why": why})
+    if played and with_chances:
+        for t in answer.get("chances") or []:
+            if played["to"] in (t.get("targets") or [t["target"]]) and played["from"] in t["attackers"]:
+                found.add(t["target"])
     missed = [t["target"] for t in keys if t["target"] not in found]
     items = [{"target": t["target"], "found": t["target"] in found, "text": describe(t, after),
               "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in keys]
