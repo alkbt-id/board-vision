@@ -104,7 +104,6 @@ const toShapes = (list) => [
   ...(S.phase === "plan" && S.step1 ? S.step1.marks.filter(isCircle).map((a) => ({ orig: a.from, brush: "paleChance" })) : []),
   ...(myMove ? [{ orig: myMove.from, dest: myMove.to, brush: "blue" }] : []),
   ...list.map((a) => (isCircle(a) ? { orig: a.from, brush: "chance" } : { orig: a.from, dest: a.to, brush: "orange" }))];
-const NOT_YET = "Его угрозы — после твоего хода";
 // your move drawn in the marking step: a legal one ends the marking, anything else is not a move
 function drawnMove(from, to, how) {
   if ((S.v?.dests?.[from] || []).includes(to)) { check({ from, to, how }); return; }
@@ -165,12 +164,10 @@ function syncArrows(shapes, how) {
   if (S.phase === "plan" && myMove && !shapes.some((s) => s.brush === "blue")) { rethink(); return; }
   let now = shapes.filter((s) => s.brush !== "blue" && (s.dest ? s.orig !== s.dest : S.phase === "draw" && his(s.orig)))
     .map((s) => ({ from: s.orig, to: s.dest || s.orig }));
-  if (S.phase === "draw") { // step 1 takes circles; your move drawn with the right button ends it
+  if (S.phase === "draw") { // step 1: his threats and your circles; your move drawn with the right button ends it
     const fresh = now.filter((x) => !isCircle(x) && !arrows.some((b) => x.from === b.from && x.to === b.to));
     const mv = fresh.find((x) => isMoveArrow(x.from, x.to));
     if (mv) { drawnMove(mv.from, mv.to, how); return; }
-    if (fresh.length) flashTask(NOT_YET);
-    now = now.filter(isCircle);
   }
   if (S.phase === "plan" && !myMove) {
     const a = now.find((x) => !arrows.some((b) => x.from === b.from && x.to === b.to));
@@ -189,7 +186,6 @@ function syncArrows(shapes, how) {
 }
 function toggleArrow(from, to, how, extra = {}) {
   if (isMoveArrow(from, to)) { drawnMove(from, to, how); return; }
-  if (S.phase === "draw") { setArrows(arrows); flashTask(NOT_YET); return; } // his threats: after your move
   if (S.phase === "plan" && !myMove) { tryMove(from, to, how); return; }
   if (S.phase === "plan" && sameLine({ from, to }, myMove)) { rethink(); return; } // your move drawn again: take it back
   const twin = arrows.find((b) => sameLine({ from, to }, b));
@@ -299,12 +295,19 @@ wrap.addEventListener("pointerup", (e) => {
   if (to && to !== from) { setPick(null); toggleArrow(from, to, `${how}-drag`, to !== upKey ? { lifted_on: upKey } : {}); return; }
   // a tap. In the marking step a tap on his piece puts a circle on it (a chance) or takes it off, and starts an arrow
   // from it: a tap next on your piece or an empty square turns that circle into the arrow (a threat)
-  // in step 1 a tap on his piece puts a circle on it or takes it off (after a tap on your piece: you take it)
-  if (S.phase === "draw" && his(from) && !(S.pick && mine(S.pick))) { setPick(null); toggleCircle(from, `${how}-tap`); return; }
-  if (S.pick === from) { setPick(null); return; }
+  // in step 1 a tap on his piece puts a circle on it or takes it off, and starts an arrow from it: a tap next on
+  // your piece or an empty square turns that circle into the arrow (his threat); after a tap on your piece it is
+  // your move
+  if (S.pick === from) { if (S.pickCircled) toggleCircle(from, `${how}-tap`); setPick(null); return; }
+  if (S.phase === "draw" && his(from) && !(S.pick && mine(S.pick))) {
+    const on = toggleCircle(from, `${how}-tap`);
+    setPick(on ? from : null, on);
+    return;
+  }
   if (!S.pick) { setPick(from); return; }
-  const a = S.pick;
+  const a = S.pick, circled = S.pickCircled;
   setPick(null);
+  if (circled) setArrows(arrows.filter((x) => !(isCircle(x) && x.from === a))); // the circle becomes the arrow
   toggleArrow(a, from, `${how}-tap`);
 }, { capture: true });
 wrap.addEventListener("pointercancel", () => { drag.from = drag.id = null; preview(null); }, { capture: true });
@@ -324,7 +327,7 @@ function syncMode() {
   const ph = S.phase, rv = ph === "review" ? S.review : null;
   let kind = "", text = "", label = "", act = null;
   if (ph === "wait") { kind = "wait"; text = S.waitText || ""; }
-  else if (ph === "draw") { kind = "chances"; text = "Что у него висит?"; label = arrows.length ? "Готово" : "Ничего нет"; act = check; }
+  else if (ph === "draw") { kind = "threats"; text = "Угрозы и шансы"; label = arrows.length ? "Готово" : "Ничего нет"; act = check; }
   else if (ph === "plan") {
     if (myMove) { kind = "threats"; text = "Угрозы после хода"; label = "Хожу"; act = commitMove; }
     else { kind = "move"; text = S.v?.check ? "Шах! Твой ход" : "Твой ход"; label = "Хожу"; }
@@ -642,7 +645,7 @@ async function loadProgress() {
 
 const RULES = `
   <details class="rules"><summary>Как это работает</summary>
-    <p>Соперник делает ход. 1) Тапни каждую его фигуру, которую ты можешь выиграть прямо сейчас (взять и остаться в плюсе после всех разменов, или выиграть шахом с вилкой; на Mac — или правый клик): на ней появится фиолетовый кружок. Твой мат, в том числе в 2–3 хода, — кружок на его короле. 2) Нарисуй свой ход — стрелку от своей фигуры. 3) Нарисуй его угрозы после твоего хода — стрелки от его фигур: каждый его шах (стрелку хода с шахом), что он сможет взять с выигрышем, мат, вилки и связки, которые выигрывают материал. 4) «Хожу». Ошибки, если они есть, покажутся все вместе, потом ходит соперник. Значки на пропущенных ходах: + шах, # мат, вилка (столовая) — вилка, цепочка — связка, глаз — вскрытое нападение, ! — взятие.</p>
+    <p>Соперник делает ход. 1) Нарисуй его угрозы сейчас — стрелки от его фигур к твоим, которые он может выиграть, и на поле мата. И тапни каждую его фигуру, которую ты можешь выиграть прямо сейчас (взять и остаться в плюсе после всех разменов, или выиграть шахом с вилкой; на Mac — или правый клик): на ней появится фиолетовый кружок. Твой мат, в том числе в 2–3 хода, — кружок на его короле. 2) Нарисуй свой ход — стрелку от своей фигуры. 3) Нарисуй его угрозы после твоего хода — стрелки от его фигур: каждый его шах (стрелку хода с шахом), что он сможет взять с выигрышем, мат, вилки и связки, которые выигрывают материал. 4) «Хожу». Ошибки, если они есть, покажутся все вместе, потом ходит соперник. Значки на пропущенных ходах: + шах, # мат, вилка (столовая) — вилка, цепочка — связка, глаз — вскрытое нападение, ! — взятие.</p>
     <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — ↶ над доской, Backspace или та же стрелка ещё раз. Закончил — кнопка в цветной полосе над доской или Enter.</p>
     <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
     <p>Серия: соперник ходит — отмечаешь угрозы — ходишь сам — отвечает бот уровня 1300 — снова отмечаешь… Серия без промахов делает следующую на ход длиннее, две серии с промахами подряд — на ход короче. Длина 1 — одна позиция.</p>
@@ -797,7 +800,7 @@ async function commitMove() {
     try { a = await api("/api/play/answer", { play: S.sid, arrows: st.marks, ms: st.ms, move: mv.from + mv.to }); }
     catch (e) { S.phase = "plan"; flashTask(e.message); return; }
     S.step1 = null;
-    S.pendingChance = { result: a.result, chances: a.chances || [], marks: st.marks };
+    S.pendingChance = { result: a.result, chances: a.chances || [], threats: a.threats || [], marks: st.marks };
     if (a.phase !== "plan") { // the game is over in that position: no move to make, its review now
       S.v = a;
       S.pendingChance = null;
@@ -832,11 +835,14 @@ async function commitMove() {
   for (const at of v.own.attacks) if (!found.has(at.key)) auto.push(...attackShapes(at));
   // step 1: your circles (✓ / ✕ in the corner) and the pieces of his you could have won, red with !
   const pr = pc?.result, pFound = new Set(pr?.found || []);
-  const circles = (pc?.marks || []).filter(isCircle).map((a) => {
+  // step 1: your circles and arrows (✓ / ✕), his threats before your move and your chances that you missed
+  const circles = (pc?.marks || []).map((a) => {
     const right = !pr.extra.some((x) => x.from === a.from && x.to === a.to);
-    return cornerMark({ orig: a.from, brush: right ? "green" : "grey" }, right ? "ok" : "extra");
+    if (isCircle(a)) return cornerMark({ orig: a.from, brush: right ? "green" : "grey" }, right ? "ok" : "extra");
+    return marked({ orig: a.from, dest: a.to, brush: right ? "green" : "grey" }, right ? "ok" : "extra");
   });
-  for (const t of pc?.chances || []) if (!pFound.has(t.target)) auto.push(...chanceShapes(t, true));
+  for (const t of pc?.threats || []) if (!t.optional && !pFound.has(t.target)) auto.push(...missedArrows(t, true));
+  for (const t of pc?.chances || []) if (!t.optional && !pFound.has(t.target)) auto.push(...chanceShapes(t, true));
   if (res.ok && (!pr || pr.ok)) return goOn(v); // all seen: the opponent answers at once
   const shapes = [...user, ...circles];
   S.reviewShapes = shapes;

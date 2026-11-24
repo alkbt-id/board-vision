@@ -280,6 +280,9 @@ def tactic_items(board: chess.Board, lines: list[dict], known: list[dict], who: 
                     "gain": 0, "mate": bool(ln["mate"]), "mate_in": ln["mate"],
                     "tactic": "mate" if ln["mate"] else "check" if board.gives_check(first) else "quiet",
                     "motif": "мат" if ln["mate"] else motif(board, first),
+                    # your quiet combination (a fork, a pin found by the engine) is calculation, not attention: right
+                    # when you mark it, no miss when you do not (a side note, 2026-11-24; «это же не тренажёр счёта»)
+                    **({"optional": True} if who == "you" and not ln["mate"] and not board.gives_check(first) else {}),
                     "line": steps, "wins": wins})
     return out
 
@@ -411,11 +414,12 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
             found.add(t["target"])
         else:
             extra.append({"from": sq, "to": sq, "why": "not_winnable"})
-    missed = [t["target"] for t in keys if t["target"] not in found]
+    missed = [t["target"] for t in keys if t["target"] not in found and not t.get("optional")]
     items = [{"target": t["target"], "found": t["target"] in found, "text": describe(t, after),
               "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in keys]
     return {"found": sorted(found), "missed": missed, "extra": extra, "ok": not missed and not extra,
-            "n": len(keys), "chances": with_chances, "tactics": with_tactics, "threats_asked": with_threats,
+            "n": sum(1 for t in keys if not t.get("optional")), "chances": with_chances, "tactics": with_tactics,
+            "threats_asked": with_threats,
             "items": items, "extras": [explain_extra(x, answer, after) for x in extra]}
 
 
@@ -509,9 +513,13 @@ def check_items(board: chess.Board, known: list[dict]) -> list[dict]:
         b.push(move)
         if b.is_checkmate():
             continue
+        # a check that simply loses the checking piece (you take it and come out ahead) is optional: right when you
+        # mark it, no miss when you do not (the user, 2026-11-24: «в ошибку ставятся все вилки, даже если они
+        # суицидальные»); it is a check, not a fork — a fork that wins is the engine's item with its own sign
+        suicidal = any(capture_gain(b, c) > 0 for c in b.generate_legal_captures(to_mask=chess.BB_SQUARES[move.to_square]))
         out.append({"target": move.uci(), "targets": [to, chess.square_name(king)], "piece": None, "attackers": [fr],
                     "best": move.uci(), "san": board.san(move), "gain": 0, "mate": False, "kind": "check",
-                    "motif": motif(board, move),
+                    "motif": "шах", **({"optional": True} if suicidal else {}),
                     "line": [{"from": fr, "to": to, "san": board.san(move), "who": "he"}]})
     return out
 

@@ -325,8 +325,8 @@ def test_every_check_after_your_move_is_to_be_marked():
     assert not any(t["target"] == "f7f8" for t in checks)  # Rxf8+ is the capture threat's
     after = before.copy()
     after.push(move)
-    missed = threats.check_own(key, [{"from": "f7", "to": "f8"}], after)
-    assert not missed["ok"] and "g4g5" in missed["missed"]
+    left_out = threats.check_own(key, [{"from": "f7", "to": "f8"}], after)
+    assert "g4g5" not in left_out["missed"]  # Qxg5+ only loses the queen: optional (see the suicidal test)
     arrows = [{"from": "f7", "to": "f8"}] + [{"from": t["attackers"][0], "to": t["targets"][0]} for t in checks]
     assert threats.check_own(key, arrows, after)["ok"]
     old = threats.check_own(key, [{"from": "f7", "to": "f8"}], after, with_checks=False)
@@ -343,3 +343,11 @@ def test_a_move_is_named_for_the_board():
     to_queen = chess.Board("8/2k5/8/4q3/8/4n3/8/R5K1 w - - 0 1")
     assert threats.motif(to_queen, chess.Move.from_uci("a1e1")) == "связка"  # the knight in front of the queen
     assert threats.motif(chess.Board("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1"), chess.Move.from_uci("a1a8")) == "мат"
+
+
+def test_a_suicidal_check_is_optional_and_signed_as_a_check():
+    # after ...g5 in the user's game Qxg5+ only loses the queen (hxg5): a check to see, not a miss to leave out
+    before = chess.Board("5rk1/2p2Rp1/p1qp3p/1p6/1P4Q1/P3P2P/1P4P1/5RK1 b - - 0 24")
+    key = threats.own_move(before, chess.Move.from_uci("g7g5"))
+    qg5 = next(t for t in key["threats"] if t["target"] == "g4g5")
+    assert qg5["optional"] and qg5["motif"] == "шах"

@@ -204,9 +204,9 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
         mv = chess.Move.from_uci(move[:4])
         if any(m.from_square == mv.from_square and m.to_square == mv.to_square for m in board.legal_moves):
             played = {"from": move[:2], "to": move[2:4]}
-    # only his pieces you can win: his threats are marked after your own move (the user, 2026-11-24: «я отмечаю
-    # угрозы только те которые возникнут после моего хода»)
-    result = threats.check(key, arrows, board, played=played, with_threats=False)
+    # his threats now and his pieces you can win — the threats before your move came back (the user, 2026-11-24: «давай
+    # еще вернем возможность отмечать угрозы перед моим ходом, это как то для меня более логично»)
+    result = threats.check(key, arrows, board, played=played)
     chances = key.get("chances") or []
     item_id = p["item"]
     if item_id is None:  # a position reached in play: store it like a pool position
@@ -230,7 +230,7 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
                extra=result["extra"],
                arrows=arrows, ms=ms, series=p["series_no"], step=sr["checks"],
                **({"move": played["from"] + played["to"]} if played else {}))
-    extra: dict = {"result": result, "threats": [], "chances": chances}
+    extra: dict = {"result": result, "threats": key["threats"], "chances": chances}
     if board.is_game_over():  # the series ends after your move now (vision/play.commit)
         extra["series_end"] = _end_series(p, game_over=board.is_game_over())
         p["phase"] = "next"
