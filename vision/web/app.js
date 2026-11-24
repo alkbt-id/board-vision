@@ -823,8 +823,12 @@ async function commitMove() {
     return marked({ orig: a.from, dest: a.to, brush: extra ? "grey" : "green" }, extra ? "extra" : "ok");
   });
   const auto = [];
-  // his taking back where you have just taken (optional): pale, from every piece that can, never a miss
-  for (const t of v.own.threats) if (!found.has(t.target)) auto.push(...(t.optional ? missedArrows(t, false, "paleOrange") : missedArrows(t, true)));
+  // his taking back where you have just taken (optional): pale, from every piece that can, never a miss; a check
+  // that only loses the checking piece is not shown at all when left out — there is nothing to learn from it
+  for (const t of v.own.threats) {
+    if (found.has(t.target) || (t.optional && t.kind === "check")) continue;
+    auto.push(...(t.optional ? missedArrows(t, false, "paleOrange") : missedArrows(t, true)));
+  }
   for (const at of v.own.attacks) if (!found.has(at.key)) auto.push(...attackShapes(at));
   if (res.ok) return goOn(v); // all seen: the opponent answers at once
   const shapes = user;

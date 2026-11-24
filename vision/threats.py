@@ -4,8 +4,10 @@ The position is the one right after the opponent's move, with the user to move. 
   capture  the opponent can take one of the user's pieces or pawns and come out ahead in material, counting the
            whole exchange on that square: every legal capture and recapture, cheapest piece first, so pieces lined
            up behind others (batteries, x-rays) join in as the line opens, and a pinned piece or the king only
-           takes when the rules allow it. This is the rule the user is shown (the start screen says so); the
-           review spells the exchange out (`line`) whenever there is one;
+           takes when the rules allow it. A capture that opens a line onto a piece of his own counts what he
+           loses there too (Bh3xg2 opens the h-file and Rh1xh6 takes his queen: no threat). This is the rule the
+           user is shown (the start screen says so); the review spells the exchange out (`line`) whenever there
+           is one;
   promotion  a pawn of the opponent can walk onto the last rank and come out ahead after the exchange there
            (a promotion with a capture is already a capture threat);
   mate     the opponent can mate in one.
@@ -82,6 +84,42 @@ def _swap(board: chess.Board, square: int) -> int:
         board.pop()
 
 
+def _exposed(board: chess.Board, move: chess.Move) -> tuple[int, chess.Move | None]:
+    """What the other side wins back through the square `move` leaves: a capture of his that this piece shielded
+    (Bh3xg2 opens the h-file, Rh1xh6 takes the queen behind it) — (its gain after the exchange there, less the best
+    capture left to the first side after it, the move), or (0, None). The second part keeps a capture with tempo:
+    Nxb5 hitting the queen c7 while it opens b2 to Bg7 — Bxb2?? Nxc7. Taking back on `move`'s own square is the
+    exchange's, not this."""
+    board.push(move)
+    try:
+        best, best_move = 0, None
+        for c in board.generate_legal_captures():
+            opened = chess.between(c.from_square, c.to_square) & chess.BB_SQUARES[move.from_square]
+            if c.to_square == move.to_square or not opened:
+                continue
+            gain = capture_gain(board, c)
+            if gain <= best:
+                continue
+            board.push(c)
+            back = max((capture_gain(board, r) for r in board.generate_legal_captures()
+                        if r.to_square != c.to_square), default=0)  # taking back there is in `gain` already
+            board.pop()
+            if gain - back > best:
+                best, best_move = gain - back, c
+        return best, best_move
+    finally:
+        board.pop()
+
+
+def net_gain(board: chess.Board, move: chess.Move) -> int:
+    """`capture_gain`, unless the capture opens a line through which the other side wins back more than it takes
+    (`_exposed`): then what it nets, below zero — a capture that loses on balance is no threat. A smaller loss there
+    leaves the gain as it is: the rule counts a threat by the exchange on its square."""
+    lost, _ = _exposed(board, move)
+    net = _taken(board, move) - lost
+    return net if net < 0 else capture_gain(board, move)
+
+
 def capture_gain(board: chess.Board, move: chess.Move) -> int:
     """What the capture `move` wins after the whole exchange on its square; negative when it loses material."""
     gain = _taken(board, move)
@@ -126,6 +164,11 @@ def exchange(board: chess.Board, first: chess.Move) -> dict:
     while that pays. When the defender would not take back at all, `if_recapture` shows what taking back gives."""
     square = first.to_square
     out = _line(board, _play_out(board, [first], square))
+    lost, reply = _exposed(board, first)
+    if reply is not None and _taken(board, first) - lost < 0:  # he loses more through the line it opens
+        b = board.copy(stack=False)
+        b.push(first)
+        return {"line": [board.san(first), b.san(reply)], "gain": _taken(board, first) - lost}
     if len(out["line"]) == 1:
         b = board.copy(stack=False)
         b.push(first)
@@ -161,7 +204,7 @@ def opponent_key(board: chess.Board) -> dict:
     for move in board.generate_legal_captures():
         if board.is_en_passant(move) or board.piece_type_at(move.to_square) == chess.KING:
             continue
-        gain = capture_gain(board, move)
+        gain = net_gain(board, move)
         t = found.setdefault(move.to_square, {"attackers": set(), "gain": None, "best": None, "mate": False})
         t["attackers"].add(move.from_square)
         # the best capture: the one that wins most; of equal ones the cheapest piece (it is the one you would see)
@@ -170,7 +213,7 @@ def opponent_key(board: chess.Board) -> dict:
     promos: dict[int, dict] = {}
     for move in board.legal_moves:
         if move.promotion == chess.QUEEN and not board.is_capture(move):
-            gain = capture_gain(board, move)  # the new queen minus the pawn, minus what is won back there
+            gain = net_gain(board, move)  # the new queen minus the pawn, minus what is won back there
             p = promos.setdefault(move.to_square, {"attackers": set(), "gain": None, "best": None})
             p["attackers"].add(move.from_square)
             if p["gain"] is None or gain > p["gain"]:
@@ -522,7 +565,7 @@ def check_items(board: chess.Board, known: list[dict]) -> list[dict]:
         # a check that simply loses the checking piece (you take it and come out ahead) is optional: right when you
         # mark it, no miss when you do not; it is a check, not a fork — a fork that wins is the engine's item with its
         # own sign
-        suicidal = any(capture_gain(b, c) > 0 for c in b.generate_legal_captures(to_mask=chess.BB_SQUARES[move.to_square]))
+        suicidal = any(net_gain(b, c) > 0 for c in b.generate_legal_captures(to_mask=chess.BB_SQUARES[move.to_square]))
         out.append({"target": move.uci(), "targets": [to, chess.square_name(king)], "piece": None, "attackers": [fr],
                     "best": move.uci(), "san": board.san(move), "gain": 0, "mate": False, "kind": "check",
                     "motif": "шах", **({"optional": True} if suicidal else {}),

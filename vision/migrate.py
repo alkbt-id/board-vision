@@ -14,6 +14,8 @@ History:
      keeping the engine's tactics they carry
   6  the same taking back is optional: drawn it is right, left out it is no miss (2026-11-24: after a pawn capture
      on d3 the arrows of his taking back are wanted, not wrong)
+  7  a capture that opens a line onto a piece of the capturing side counts what it loses there (Bh3xg2 opening the
+     h-file to Rh1xh6 was marked as a missed threat)
 The engine's tactics (forced mates in 2–3, winning checks: threats.add_tactics) are not the rule's: a position keeps
 the ones it has when its key is computed again, and an answer is checked with them only if it was asked for them
 (its stored result has "tactics": true).
@@ -25,7 +27,7 @@ import chess
 
 from . import events, store, threats
 
-RULE_VERSION = "6"
+RULE_VERSION = "7"
 
 
 def _own_moves() -> int:

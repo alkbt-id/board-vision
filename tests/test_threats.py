@@ -362,3 +362,30 @@ def test_a_line_that_only_takes_what_is_threatened_anyway_is_no_new_item():
     line = [chess.Move.from_uci(u) for u in ("d4f2", "f1f2", "e7b7")]
     threats.add_tactics(key, after, lambda b, **kw: [{"pv": line, "mate": None}] if b.turn == chess.BLACK else [])
     assert not [t for t in key["threats"] if t.get("tactic")]
+
+
+def test_a_capture_that_opens_a_line_onto_his_own_queen_is_no_threat():
+    # a real game: Ba8-g2 offers the bishop, but Bh3xg2 opens the h-file and Rh1xh6 takes the queen behind it
+    after = chess.Board("4r1k1/p1Q2p1p/5npq/8/8/2NP3b/PPP2PB1/1K1R3R b - - 1 22")
+    answer = threats.opponent_key(after)  # his move: what he can win
+    assert "g2" not in {t["target"] for t in answer["threats"]}
+    assert "g2" in answer["defended"]
+    assert answer["exchanges"]["g2"] == {"line": ["Bxg2", "Rxh6"], "gain": -6}
+    before = chess.Board("B3r1k1/p1Q2p1p/5npq/8/8/2NP3b/PPP2P2/1K1R3R w - - 0 22")
+    key = threats.own_move(before, chess.Move.from_uci("a8g2"))
+    assert "g2" not in {t["target"] for t in key["threats"]}
+
+
+def test_a_capture_that_opens_a_line_onto_a_cheaper_piece_still_wins():
+    # Bh4xe7 wins a knight; the h-file it opens only lets Rh1 take the pawn h6: still a threat
+    board = chess.Board("7k/4N3/7p/8/7b/8/8/1K5R w - - 0 1")
+    board.push(chess.Move.null())
+    key = threats.opponent_key(board)
+    assert {t["target"]: t["gain"] for t in key["threats"]} == {"e7": 3}
+
+
+def test_a_capture_with_tempo_keeps_its_threat():
+    # Nd4xb5 takes a pawn and hits the queen c7; the diagonal it opens lets Bg7xb2, but then Nxc7
+    board = chess.Board("4k2r/1bq2pb1/4p3/1p4p1/2pN4/R7/1P2BPPP/3Q1RK1 b k - 0 17")
+    board.push(chess.Move.null())
+    assert "b5" in {t["target"] for t in threats.opponent_key(board)["threats"]}
