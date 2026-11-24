@@ -226,6 +226,10 @@ details.rules p { margin: 8px 0 0; }
 .board-mode.threats { background: #15781B; }
 .board-mode.move { background: #2a78d6; }
 .board-col { gap: 0; }
-.board-wrap.mode-threats { outline: 5px solid #15781B; outline-offset: 0; }
-.board-wrap.mode-move { outline: 5px solid #2a78d6; outline-offset: 0; }
+/* the frame is drawn inside the board (over the squares, under nothing you click), so it lines up with the strip */
+.board-wrap { position: relative; }
+.board-wrap.mode-threats::after, .board-wrap.mode-move::after { content: ""; position: absolute; inset: 0; border: 5px solid;
+  border-top: 0; border-radius: 0 0 3px 3px; pointer-events: none; z-index: 10; }
+.board-wrap.mode-threats::after { border-color: #15781B; }
+.board-wrap.mode-move::after { border-color: #2a78d6; }
 .board-wrap { border-radius: 0 0 3px 3px; }
