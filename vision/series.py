@@ -3,8 +3,8 @@
 After each bot move the user marks what is now under attack (vision/threats.py, computed live for whatever position
 the game has reached), sees the review, then makes his own move on the board. A series ends after `length` checks
 (or when the game ends). A series without a miss makes the next one a move longer; with a miss the length stays.
-The start: a position after the opening from the user's games or from other people's games, or the initial
-position — mixed. A position where the bot gives check is no drill: the user just answers the check.
+The start: a position after the opening (moves 8–12) from the user's games or from other people's games, half and
+half; the initial position only when there are no such positions yet (the user: no point starting from move 1). A position where the bot gives check is no drill: the user just answers the check.
 
 Every check is stored like a drill position (items.source = "series") and an answer (attempts.session = the series
 id), so it counts in the attention rating; the series is a row in `sessions` with summary.kind = "series".
@@ -21,7 +21,7 @@ from . import bot, events, store, threats
 
 START_LENGTH = 3
 MAX_LENGTH = 30
-MIX = (("own", 0.4), ("db", 0.4), ("start", 0.2))
+MIX = (("own", 0.5), ("db", 0.5))
 SERIES: dict[str, dict] = {}
 
 
@@ -36,12 +36,12 @@ def best() -> int:
 def _start_position(rng: random.Random) -> tuple[chess.Board, chess.Color, str]:
     """(board with the bot or the user to move, the user's colour, where it comes from)."""
     kind = rng.choices([k for k, _ in MIX], weights=[w for _, w in MIX], k=1)[0]
-    if kind != "start":
+    for source in (kind, *(k for k, _ in MIX if k != kind)):
         rows = store.q("SELECT fen, side FROM items WHERE source = ? AND ply BETWEEN 14 AND 24 ORDER BY random() LIMIT 1",
-                       (kind,))
+                       (source,))
         if rows:
             board = chess.Board(rows[0]["fen"])  # the opponent (the bot) is to move here
-            return board, chess.WHITE if rows[0]["side"] == "w" else chess.BLACK, kind
+            return board, chess.WHITE if rows[0]["side"] == "w" else chess.BLACK, source
     return chess.Board(), rng.choice([chess.WHITE, chess.BLACK]), "start"
 
 
