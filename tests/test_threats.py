@@ -124,3 +124,16 @@ def test_rating_features_see_a_discovered_attack_and_a_quiet_decoy():
     assert f["threat"] == 1 and f["discovered"] == 1
     assert rating.score(2, 1, 0) == 0.5
     assert rating.score(0, 0, 1) == 0.5
+
+
+def test_a_pawn_walking_in_to_queen_is_a_threat():
+    # 2026-11-24 on the iPad: after …Ra2-a1 the rook hits g1 and the pawn b2 queens on b1 (Rxb1 Rxb1 still wins)
+    after = chess.Board("8/R7/P1k4P/2Pp4/3Pb3/4P1K1/1p3P2/r5R1 w - - 0 1")
+    answer = threats.analyse(after)
+    assert answer is not None
+    got = {t["target"]: t for t in answer["threats"]}
+    assert set(got) == {"g1", "b1"}
+    assert got["b1"]["promotion"] and got["b1"]["attackers"] == ["b2"]
+    res = threats.check(answer, [{"from": "a1", "to": "g1"}, {"from": "b2", "to": "b1"}], after)
+    assert res["ok"]
+    assert "проходит в ферзи" in res["items"][1]["text"]

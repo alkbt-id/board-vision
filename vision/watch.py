@@ -82,6 +82,10 @@ def line(e: dict) -> str | None:
             return f"{t}     … бездействие {sec(e.get('ms'))}"
         case "active":
             return None
+        case "rule_update":
+            return (f"{t} ⚙ правило угроз v{e.get('version')}: позиций пересчитано {e.get('items')} (изменилось "
+                    f"{e.get('items_changed')}), ответов перепроверено {e.get('answers')}: стали верными "
+                    f"{e.get('now_right')}, стали неверными {e.get('now_wrong')}")
         case "session_exit":
             return f"{t} ━━ вышел на главный экран на позиции {e.get('index', 0) + 1}/{e.get('size')} (отвечено {e.get('answered')})"
         case "leave_click":

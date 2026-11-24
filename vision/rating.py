@@ -20,6 +20,7 @@ describe in «Невидимые шахматные ходы» and what the rese
   knight        a knight takes
   exchange      it is only a threat because of the whole exchange (3+ captures, or taking back does not help)
   mate          the opponent mates
+  promotion     a pawn walks in to queen
   decoys        quiet position: pieces of yours that are attacked but safe (they look like threats), up to 2
 The points start as a guess (WEIGHTS) and are adjusted by the answers themselves, a little after each one: a kind
 of position you miss more often than expected becomes worth more.
@@ -38,7 +39,7 @@ K = 24  # rating step
 ETA = 4  # how fast the difficulty points learn
 WEIGHTS = {
     "threat": 300, "more": 100, "discovered": 150, "old": 100, "backward": 100, "horizontal": 75, "long": 50,
-    "knight": 50, "exchange": 150, "mate": 50, "decoys": 100,
+    "knight": 50, "exchange": 150, "mate": 50, "promotion": 100, "decoys": 100,
 }
 
 
@@ -59,9 +60,11 @@ def features(fen: str, move_uci: str, answer: dict) -> dict[str, float]:
         attacker = best.from_square
         if t["mate"]:
             f["mate"] = 1.0
+        if t.get("promotion"):
+            f["promotion"] = 1.0
         if attacker != move.to_square and attacker not in before.attackers(opp, best.to_square):
             f["discovered"] = 1.0
-        if t["piece"] is not None and _threat_before(before, target):
+        if t["piece"] is not None and not t.get("promotion") and _threat_before(before, target):
             f["old"] = 1.0
         piece = after.piece_type_at(attacker)
         dr = chess.square_rank(best.to_square) - chess.square_rank(attacker)
@@ -99,6 +102,10 @@ def expected(difficulty: float, rating: float) -> float:
 
 
 _feature_cache: dict[int, dict] = {}
+
+
+def clear_cache() -> None:
+    _feature_cache.clear()
 
 
 def _item_features(item_id: int, fen: str, move: str, answer_json: str) -> dict:

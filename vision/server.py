@@ -14,6 +14,7 @@
 """
 
 import contextlib
+import threading
 import time
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import config, events, session, sources, store
+from . import config, events, migrate, session, sources, store
 
 WEB = Path(__file__).parent / "web"
 REFRESH_EVERY_MS = 12 * 3600 * 1000
@@ -102,9 +103,16 @@ async def lifespan(_app):
     events.log("app_start", port=config.PORT, counts=store.counts())
     last = int(store.meta_get("last_refresh", "0") or 0)
     # also when an earlier run was cut off before Stockfish checked every quiet position
-    if not sources.ready() or time.time() * 1000 - last > REFRESH_EVERY_MS or store.counts()["quiet_unchecked"]:
+    refresh = not sources.ready() or time.time() * 1000 - last > REFRESH_EVERY_MS or store.counts()["quiet_unchecked"]
+    if refresh:
         store.meta_set("last_refresh", str(int(time.time() * 1000)))
-        sources.start_background()
+
+    def background() -> None:
+        migrate.run()  # a changed threat rule: positions and past answers first
+        if refresh:
+            sources.refresh()
+
+    threading.Thread(target=background, name="startup", daemon=True).start()
     try:
         yield
     finally:

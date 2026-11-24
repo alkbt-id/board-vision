@@ -6,6 +6,8 @@ The position is the one right after the opponent's move, with the user to move. 
            up behind others (batteries, x-rays) join in as the line opens, and a pinned piece or the king only
            takes when the rules allow it. This is the rule the user is shown (the start screen says so); the
            review spells the exchange out (`line`) whenever there is one;
+  promotion  a pawn of the opponent can walk onto the last rank and come out ahead after the exchange there
+           (a promotion with a capture is already a capture threat);
   mate     the opponent can mate in one.
 Both are found by handing the move back to the opponent (a null move) and looking at his legal moves.
 A position where the user is in check is not a drill position (`analyse` returns None).
@@ -122,6 +124,14 @@ def analyse(after: chess.Board) -> dict | None:
         t["attackers"].add(move.from_square)
         if t["gain"] is None or gain > t["gain"]:
             t["gain"], t["best"] = gain, move
+    promos: dict[int, dict] = {}
+    for move in board.legal_moves:
+        if move.promotion == chess.QUEEN and not board.is_capture(move):
+            gain = capture_gain(board, move)  # the new queen minus the pawn, minus what is won back there
+            p = promos.setdefault(move.to_square, {"attackers": set(), "gain": None, "best": None})
+            p["attackers"].add(move.from_square)
+            if p["gain"] is None or gain > p["gain"]:
+                p["gain"], p["best"] = gain, move
     for move in board.legal_moves:
         board.push(move)
         mate = board.is_checkmate()
@@ -158,6 +168,17 @@ def analyse(after: chess.Board) -> dict | None:
         elif piece is not None:
             defended.append(chess.square_name(square))
             exchanges[chess.square_name(square)] = exchange(board, t["best"])
+    for square, p in promos.items():
+        name = chess.square_name(square)
+        if (p["gain"] or 0) <= 0 or any(name in (t.get("targets") or []) for t in threats):
+            continue  # not winning, or that square is already a mate threat
+        best = p["best"]
+        threats.append({
+            "target": name, "targets": [name], "piece": None, "promotion": True,
+            "attackers": sorted(chess.square_name(s) for s in p["attackers"]),
+            "best": best.uci(), "san": board.san(best), "gain": p["gain"], "mate": False,
+            "exchange": exchange(board, best),
+        })
     return {"threats": threats, "defended": sorted(defended), "exchanges": exchanges}
 
 
@@ -169,6 +190,8 @@ def _who(after: chess.Board, square: str) -> str:
 def describe(threat: dict, after: chess.Board) -> str:
     """One threat in a few words: «слон d4 ← ферзь d8» / «пешка e5 ← пешка d4, конь f3» / «мат: Qh7#»."""
     attackers = sorted(threat["attackers"], key=lambda s: ORDER[after.piece_type_at(chess.parse_square(s)) or chess.PAWN])
+    if threat.get("promotion"):
+        return f"пешка {attackers[0]} проходит в ферзи: {threat['san']}"
     if threat["piece"] is None:
         return f"мат: {threat['san']}"
     tail = ", и это мат" if threat["mate"] else ""
