@@ -5,6 +5,7 @@
   puzzles.py     Lichess puzzles turned around: the position right after the winning blow, the user on the side hit
   missed.py      moments of those games where a player did not see a threat and the opponent then took (real misses)
   quiet.py       Stockfish's check of positions without threats: only truly quiet ones are shown as quiet
+  tactics.py     Stockfish's forcing lines (mates in 2–3, winning checks) for the pool: threats the rule does not see
 
 `refresh()` runs them in order and reports progress through `STATUS` and the event log; the window polls
 /api/state and can start training as soon as there are enough positions.
@@ -93,7 +94,7 @@ def say(text: str, step: str = "") -> None:
 
 def refresh() -> bool:
     """Download what is new and fill the pool; False when a refresh is already running."""
-    from . import lichess_db, missed, own, puzzles, quiet
+    from . import lichess_db, missed, own, puzzles, quiet, tactics
 
     with _lock:
         if STATUS["running"]:
@@ -104,7 +105,7 @@ def refresh() -> bool:
         for step, job in (("свои партии", own.run), ("проверка тихих", lambda: quiet.run(limit=200)),
                           ("задачи Lichess", puzzles.run), ("чужие партии", lichess_db.run),
                           ("реальные зевки", missed.run),
-                          ("проверка тихих", lambda: quiet.run(limit=4000))):
+                          ("проверка тихих", lambda: quiet.run(limit=4000)), ("скрытые угрозы", tactics.run)):
             STATUS["step"] = step
             if STOPPING.is_set():
                 break

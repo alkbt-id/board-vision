@@ -9,6 +9,9 @@ History:
   3  + an arrow from a piece behind an attacker (a battery: Bc4 behind d5 on e6) counts (2026-11-24)
   4  + chances: what the user can win himself, marked in the same step (2026-11-24). Answers given before were not
      asked for them and are checked without them (their stored result has no "chances": true)
+The engine's tactics (forced mates in 2–3, winning checks: threats.add_tactics) are not the rule's: a position keeps
+the ones it has when its key is computed again, and an answer is checked with them only if it was asked for them
+(its stored result has "tactics": true).
 """
 
 import json
@@ -25,12 +28,17 @@ def run() -> None:
         return
     items = changed = 0
     keys: dict[int, tuple[dict, chess.Board]] = {}
-    for row in store.q("SELECT id, fen, move, n_threats FROM items WHERE source != 'ownmove'"):
+    for row in store.q("SELECT id, fen, move, n_threats, answer FROM items WHERE source != 'ownmove'"):
         after = chess.Board(row["fen"])
         after.push(chess.Move.from_uci(row["move"]))
         answer = threats.analyse(after)
         if answer is None:
             continue
+        old = json.loads(row["answer"] or "{}")
+        if old.get("engine"):  # keep the engine's tactics
+            answer["threats"] += [t for t in old.get("threats") or [] if t.get("tactic")]
+            answer["chances"] += [t for t in old.get("chances") or [] if t.get("tactic")]
+            answer["engine"] = True
         n = len(answer["threats"])
         changed += n != row["n_threats"]
         store.run("UPDATE items SET answer=?, n_threats=? WHERE id=?", (json.dumps(answer, ensure_ascii=False), n, row["id"]))
@@ -41,8 +49,9 @@ def run() -> None:
         if a["item"] not in keys:
             continue
         answer, after = keys[a["item"]]
-        asked = bool(json.loads(a["result"] or "{}").get("chances"))
-        res = threats.check(answer, json.loads(a["arrows"] or "[]"), after, with_chances=asked)
+        stored = json.loads(a["result"] or "{}")
+        res = threats.check(answer, json.loads(a["arrows"] or "[]"), after, with_chances=bool(stored.get("chances")),
+                            with_tactics=bool(stored.get("tactics")))
         store.run("UPDATE attempts SET n_threats=?, found=?, missed=?, extra=?, ok=?, result=? WHERE id=?",
                   (res["n"], len(res["found"]), len(res["missed"]), len(res["extra"]), int(res["ok"]),
                    json.dumps(res, ensure_ascii=False), a["id"]))

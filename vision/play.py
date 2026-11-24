@@ -205,6 +205,7 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
         raise ValueError("сейчас не проверка")
     board: chess.Board = p["board"]
     key = threats.analyse(board) or {"threats": [], "defended": [], "chances": []}
+    threats.add_tactics(key, board, engine.forcing)  # forced mates in 2–3, checks that win: the engine's
     arrows = [{"from": str(a.get("from")), "to": str(a.get("to"))} for a in arrows[:30] if isinstance(a, dict)]
     played = None
     if move:
@@ -221,6 +222,9 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
         item_id = row[0]["id"] if row else None
     if item_id is not None:
         store.record(item_id, pid, ms, result["n"], result, arrows)
+        if key.get("engine"):  # the position now carries its tactics (for its difficulty and its next showing)
+            store.run("UPDATE items SET answer=?, n_threats=? WHERE id=?",
+                      (json.dumps(key, ensure_ascii=False), len(key["threats"]), item_id))
     sr = p["series"]
     p["checks"] += 1
     sr["checks"] += 1

@@ -388,6 +388,11 @@ function badge(shape, fill, inner) {
   const dx = (shape.dest.charCodeAt(0) - shape.orig.charCodeAt(0)) * sign, dy = (+shape.orig[1] - +shape.dest[1]) * sign;
   return { ...shape, customSvg: { html: `<g transform="translate(${50 + dx * 50} ${50 + dy * 50})"><circle r="19" fill="${fill}" stroke="#fff" stroke-width="4"/>${inner}</g>` } };
 }
+// a line of moves, numbered: his in red, yours in blue (a capture that only looks fair, a fork with check, a mate)
+function lineShapes(line) {
+  return line.map((st, i) => numbered({ orig: st.from, dest: st.to, brush: st.who === "you" ? "paleBlue" : "red" },
+    i + 1, st.who === "you" ? "#2a78d6" : "#d13b25"));
+}
 // a missed tactic of his after your move (vision/play.commit): his move in red with «!» and pale arrows to what it
 // hits; a capture that only looks like a fair trade gets its whole line, numbered — 1 his capture, 2 your taking
 // back (blue), 3 his answer and what it hits (Bxc4, Nxc4, Nxc2+ forking king and rook)
@@ -399,12 +404,7 @@ function attackShapes(at) {
     return out;
   };
   const line = at.line || [];
-  if (line.length) {
-    return line.flatMap((st, i) => [
-      numbered({ orig: st.from, dest: st.to, brush: st.who === "you" ? "paleBlue" : "red" }, i + 1, st.who === "you" ? "#2a78d6" : "#d13b25"),
-      ...(i === line.length - 1 ? hits(st) : []),
-    ]);
-  }
+  if (line.length) return [...lineShapes(line), ...hits(line[line.length - 1])];
   const m = at.moves[0];
   return [marked({ orig: m.from, dest: m.to, brush: "red" }, "miss"), ...hits({ to: m.to, targets: at.targets, check: at.check })];
 }
@@ -551,7 +551,7 @@ async function loadProgress() {
 
 const RULES = `
   <details class="rules"><summary>Как это работает</summary>
-    <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле, и на поле мата в один ход — это угрозы (оранжевые). И то же самое для себя: тапни его фигуру, которую ты можешь выиграть прямо сейчас (на Mac — или правый клик), — на ней появится фиолетовый кружок, это шанс; мат в один ход — кружок на его короле. Стрелка от твоей фигуры — это твой ход: отметки на нём заканчиваются, дальше отмечаешь его ответы. Нечего отмечать — «Ничего нет» или сразу рисуй ход.</p>
+    <p>Соперник делает ход. Нарисуй стрелку от его фигуры к каждой твоей фигуре или пешке, которую он может взять и остаться в плюсе после всех разменов на этом поле, и на поле мата в один ход — это угрозы (оранжевые). Угроза — это и его шах, который выигрывает фигуру (вилка с шахом), и его форсированный мат в 2–3 хода: для них рисуй стрелку его первого хода. И то же самое для себя: тапни его фигуру, которую ты можешь выиграть прямо сейчас (на Mac — или правый клик), — на ней появится фиолетовый кружок, это шанс; твой мат, в том числе форсированный, — кружок на его короле, а можно просто сыграть первый ход. Стрелка от твоей фигуры — это твой ход: отметки на нём заканчиваются, дальше отмечаешь его ответы. Нечего отмечать — «Ничего нет» или сразу рисуй ход.</p>
     <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — ↶ над доской, Backspace или та же стрелка ещё раз. Закончил — кнопка в цветной полосе над доской или Enter.</p>
     <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
     <p>Серия: соперник ходит — отмечаешь угрозы — ходишь сам — отвечает бот уровня 1300 — снова отмечаешь… Серия без промахов делает следующую на ход длиннее, две серии с промахами подряд — на ход короче. Длина 1 — одна позиция.</p>
@@ -735,6 +735,7 @@ function verdict(res, n) {
 // a chance of yours on the board: a circle on his piece and an arrow from your piece that wins it (a mate or a
 // queening on an empty square: the move itself); `mark`: the «!» of a missed one; `pale`: a hint
 function chanceShapes(t, mark = false, pale = false) {
+  if (t.tactic) return pale ? [{ orig: t.line[0].from, dest: t.line[0].to, brush: "paleChance" }] : lineShapes(t.line);
   const best = { orig: t.best.slice(0, 2), dest: t.best.slice(2, 4) };
   if (!t.promotion && cg.state.pieces.get(t.target)) {
     const circle = { orig: t.target, brush: pale ? "paleChance" : "red" };
@@ -746,6 +747,8 @@ function chanceShapes(t, mark = false, pale = false) {
 // a threat on the board: an arrow from every piece that can take there (a mate: the mating move);
 // `mark`: the first one gets the «!» of a missed threat
 function missedArrows(t, mark = false, brush = "red") {
+  // the engine's tactic (a forced mate, a check that wins): its whole line, numbered; as a hint its first move
+  if (t.tactic) return brush === "red" ? lineShapes(t.line) : [{ orig: t.line[0].from, dest: t.line[0].to, brush }];
   const list = t.piece === null && t.mate ? [{ orig: t.best.slice(0, 2), dest: t.best.slice(2, 4), brush }]
     : [...(t.attackers || [t.best.slice(0, 2)]), ...(t.xray || [])].map((a) => ({ orig: a, dest: t.target, brush }));
   if (mark && list.length) list[0] = marked(list[0], "miss");

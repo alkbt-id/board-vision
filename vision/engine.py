@@ -1,6 +1,7 @@
-"""Stockfish for the check of the user's own move: does the move lose material to a reply that is not a capture
-right now (a fork, a pin, a trapped piece, a mating attack)? The rule (vision/threats.py) sees captures; the engine
-sees the rest. One engine, opened on first use and shared under a lock.
+"""Stockfish for what the capture rule (vision/threats.py) does not see: the check of the user's own move (does it
+lose material to a reply that is not a capture right now — a fork, a pin, a trapped piece, a mating attack?) and
+the forcing lines of a drill position (`forcing`: a mate in 2–3, a check that wins material).
+One engine, opened on first use and shared under a lock.
 """
 
 import threading
@@ -89,6 +90,58 @@ def best_move(board: chess.Board) -> chess.Move | None:
             _engine = None
             return None
     return pv[0] if pv else None
+
+
+FORCE_LIMIT = chess.engine.Limit(nodes=150_000)
+MATE_IN = 3  # a forced mate up to this many moves is a threat (a mate in one is the rule's own)
+WIN = 2  # pawns a forcing check must win
+WINNING = 150  # …and the engine must think it ends that much above the material on the board now (centipawns)
+
+
+def _won(board: chess.Board, pv: list[chess.Move], me: chess.Color) -> int:
+    """Material `me` (to move in `board`) has won along `pv`, counted after the other side's reply (an even ply,
+    PLIES at most), so a capture that is taken back is not counted."""
+    start = _material(board, me)
+    b = board.copy(stack=False)
+    best = 0
+    for i, m in enumerate(pv[:PLIES]):
+        if m not in b.legal_moves:
+            break
+        b.push(m)
+        if i % 2 == 1:
+            best = _material(b, me) - start
+    return best
+
+
+def forcing(board: chess.Board) -> list[dict] | None:
+    """The forcing lines of the side to move in `board` that win beyond one move: a mate in 2..MATE_IN, or a check
+    after which he wins at least WIN pawns. [{"pv": [moves], "mate": n | None}] from the engine's three best lines;
+    None without the engine."""
+    global _engine
+    if board.is_game_over():
+        return []
+    with _lock:
+        engine = _open()
+        if engine is None:
+            return None
+        try:
+            infos = engine.analyse(board, FORCE_LIMIT, multipv=3)
+        except chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError:
+            _engine = None
+            return None
+    me, out = board.turn, []
+    for info in infos:
+        pv = info.get("pv") or []
+        if not pv or "score" not in info:
+            continue
+        score = info["score"].pov(me)
+        mate = score.mate() if score.is_mate() else None
+        if mate is not None and 2 <= mate <= MATE_IN:
+            out.append({"pv": pv[: 2 * mate - 1], "mate": mate})
+        elif (mate is None and board.gives_check(pv[0]) and _won(board, pv, me) >= WIN
+              and (score.score() or 0) - 100 * _material(board, me) >= WINNING):  # better than the material now
+            out.append({"pv": pv[:PLIES], "mate": None})
+    return out
 
 
 def evaluate(board: chess.Board, pov: chess.Color) -> int | None:

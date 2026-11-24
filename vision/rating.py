@@ -24,6 +24,8 @@ describe in «Невидимые шахматные ходы» and what the rese
   decoys        quiet position: pieces of yours that are attacked but safe (they look like threats), up to 2
   chance        there is something of his to win yourself (marked in the same step since 2026-11-24; counted only
                 for answers that were asked for it), each one beyond the first adds to «more»
+  fork          a check that wins material, his or yours (the engine's, since 2026-11-24, for answers asked for it)
+  mate_long     a forced mate in 2–3, his or yours (likewise)
 The check of your own move («проверь свой ход», vision/play.commit) is scored on the same scale with its own points:
   own           it is your own move: the position after it has to be imagined (+100)
   attack        a fork or a new attack on your queen to see, not only a capture (+150)
@@ -46,7 +48,7 @@ ETA = 4  # how fast the difficulty points learn
 WEIGHTS = {
     "threat": 300, "more": 100, "discovered": 150, "old": 100, "backward": 100, "horizontal": 75, "long": 50,
     "knight": 50, "exchange": 150, "mate": 50, "promotion": 100, "decoys": 100, "own": 100, "attack": 150,
-    "chance": 200,
+    "chance": 200, "fork": 200, "mate_long": 250,
 }
 
 
@@ -57,7 +59,7 @@ def features(fen: str, move_uci: str, answer: dict) -> dict[str, float]:
     opp = before.turn  # the side that makes the move, i.e. the opponent
     after = before.copy(stack=False)
     after.push(move)
-    found = answer["threats"]
+    found = [t for t in answer["threats"] if not t.get("tactic")]  # the engine's: `with_chances`, per answer
     if not found:
         return {"decoys": float(min(2, len(answer["defended"])))}
     f: dict[str, float] = {"threat": 1.0, "more": float(len(found) - 1)}
@@ -114,15 +116,26 @@ def features_own(answer: dict) -> dict[str, float]:
 def with_chances(f: dict[str, float], answer_json: str, result_json: str | None) -> dict[str, float]:
     """`f` plus the chances of the position, when the answer was asked for them."""
     import json
-    if not result_json or not json.loads(result_json).get("chances"):
-        return f
-    n = len(json.loads(answer_json).get("chances") or [])
-    if not n:
+    result = json.loads(result_json or "{}")
+    answer = json.loads(answer_json)
+    tactics = bool(result.get("tactics"))
+    chances = [t for t in answer.get("chances") or [] if tactics or not t.get("tactic")] if result.get("chances") else []
+    his = [t for t in answer.get("threats") or [] if t.get("tactic")] if tactics else []
+    if not chances and not his:
         return f
     f = dict(f)
-    f.pop("decoys", None)  # a position with something to win is not a quiet one
-    f["chance"] = 1.0
-    f["more"] = f.get("more", 0.0) + n - (0 if "threat" in f else 1)
+    f.pop("decoys", None)  # a position with something to find is not a quiet one
+    if chances:
+        f["chance"] = 1.0
+    extra = len(chances) + len(his)
+    f["more"] = f.get("more", 0.0) + extra - (0 if "threat" in f else 1)
+    if his:
+        f["threat"] = 1.0
+    for t in [*chances, *his]:
+        if t.get("tactic") == "check":
+            f["fork"] = 1.0
+        elif t.get("tactic") == "mate":
+            f["mate_long"] = 1.0
     return f
 
 
@@ -172,7 +185,7 @@ def difficulty(item: dict, weights: dict[str, float]) -> float:
     """How hard a pool position is for a new answer (with chances asked): `item` has id, fen, move, answer, source."""
     f = _item_features(item["id"], item["fen"], item["move"], item["answer"], item["source"])
     if item["source"] != "ownmove":
-        f = with_chances(f, item["answer"], '{"chances": true}')
+        f = with_chances(f, item["answer"], '{"chances": true, "tactics": true}')
     return BASE + sum(weights.get(k, 0) * v for k, v in f.items())
 
 

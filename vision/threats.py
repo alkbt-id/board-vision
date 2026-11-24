@@ -17,6 +17,12 @@ come out ahead after the whole exchange, his pawn walking in to queen, his mate 
 step with a circle on the opponent's piece (his king for a mate); a mate or a queening on an empty square is found
 by playing it. An arrow from the user's own piece is his move, not a mark.
 
+Tactics (2026-11-24, the user: «шахи считаются угрозой?», «а ходы форсированного мата?»): what only an engine
+sees — a forced mate in 2–3 and a check that wins material (a fork with check) — are added for both sides by
+`add_tactics` (vision/engine.forcing): his to the threats, the user's to the chances. A tactic is found by an arrow
+of its first move (or from the piece to what it hits); a chance tactic by a circle on what it wins (on his king for
+a mate) or by playing its first move.
+
 The user answers with arrows "who takes -> whom": an arrow counts when it goes from a piece that can take (or
 mate) to the threatened square; the opposite direction counts too, unless it is itself a threat or a chance.
 """
@@ -220,6 +226,56 @@ def opponent_key(board: chess.Board) -> dict:
     return {"threats": threats, "defended": sorted(defended), "exchanges": exchanges}
 
 
+def add_tactics(key: dict, after: chess.Board, forcing) -> dict:
+    """`key` (from `analyse`) plus the forcing lines `forcing(board)` finds (vision/engine.forcing): his, with the
+    move handed to him, to "threats"; the user's to "chances". key["engine"] is True when the engine answered."""
+    him = after.copy(stack=False)
+    him.push(chess.Move.null())
+    his, mine = forcing(chess.Board(him.fen())), forcing(after.copy(stack=False))
+    if his is None or mine is None:
+        return key
+    key["threats"] = key["threats"] + tactic_items(chess.Board(him.fen()), his, key["threats"], "he")
+    key["chances"] = (key.get("chances") or []) + tactic_items(after, mine, key.get("chances") or [], "you")
+    key["engine"] = True
+    return key
+
+
+def tactic_items(board: chess.Board, lines: list[dict], known: list[dict], who: str) -> list[dict]:
+    """Items for the forcing lines of the side to move in `board` that the capture rule does not give already
+    (`known`): {"target": first move (uci, the item's key), "targets": its landing square, what it then attacks and
+    the king when it checks, "attackers": [its piece], "tactic": "mate" | "check", "mate_in", "line": the moves
+    numbered as `recapture_line` does, "wins": what the line takes}. `who` moves first: "he" or "you"."""
+    other = {"he": "you", "you": "he"}[who]
+    seen = {t["best"] for t in known}
+    out = []
+    for ln in lines:
+        first = ln["pv"][0]
+        if first.uci() in seen or (board.is_capture(first) and capture_gain(board, first) > 0 and not ln["mate"]):
+            continue  # the rule has it already
+        seen.add(first.uci())
+        b = board.copy(stack=False)
+        steps, wins = [], []
+        for i, m in enumerate(ln["pv"]):
+            if m not in b.legal_moves:
+                break
+            if i % 2 == 0 and b.piece_at(m.to_square):
+                wins.append(chess.square_name(m.to_square))
+            steps.append({"from": chess.square_name(m.from_square), "to": chess.square_name(m.to_square),
+                          "san": b.san(m), "who": who if i % 2 == 0 else other})
+            b.push(m)
+        a = board.copy(stack=False)
+        a.push(first)
+        hits = _attacked_by(a, first)
+        king = a.king(a.turn)
+        landing = chess.square_name(first.to_square)
+        targets = [landing, *hits["targets"], *([chess.square_name(king)] if hits["check"] and king is not None else [])]
+        out.append({"target": first.uci(), "targets": list(dict.fromkeys(targets)), "piece": None,
+                    "attackers": [chess.square_name(first.from_square)], "best": first.uci(), "san": board.san(first),
+                    "gain": 0, "mate": bool(ln["mate"]), "mate_in": ln["mate"],
+                    "tactic": "mate" if ln["mate"] else "check", "line": steps, "wins": wins})
+    return out
+
+
 def _who(after: chess.Board, square: str) -> str:
     p = after.piece_at(chess.parse_square(square))
     return f"{NAME[p.piece_type]} {square}" if p else square
@@ -227,6 +283,8 @@ def _who(after: chess.Board, square: str) -> str:
 
 def describe(threat: dict, after: chess.Board) -> str:
     """One threat in a few words: «слон d4 ← ферзь d8» / «пешка e5 ← пешка d4, конь f3» / «мат: Qh7#»."""
+    if threat.get("tactic"):
+        return f"{'мат в ' + str(threat['mate_in']) if threat['mate'] else 'шах'}: {' '.join(s['san'] for s in threat['line'])}"
     attackers = sorted(threat["attackers"], key=lambda s: ORDER[after.piece_type_at(chess.parse_square(s)) or chess.PAWN])
     if threat.get("promotion"):
         return f"пешка {attackers[0]} проходит в ферзи: {threat['san']}"
@@ -275,12 +333,13 @@ def explain_extra(extra: dict, answer: dict, after: chess.Board) -> dict:
 
 
 def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bool = True,
-          played: dict | None = None) -> dict:
+          played: dict | None = None, with_tactics: bool = True) -> dict:
     """Compare the user's arrows ({"from": "d8", "to": "d4"}) with the answer key: his threats and, with
     `with_chances` (answers given before 2026-11-24 were not asked for them), the user's own chances.
 
     {"found": ["d4"], "missed": ["f7"], "extra": [{"from", "to", "why": "defended" | "not_attacked" | "wrong_attacker"}],
-     "ok": bool, "n": threats + chances asked, "chances": with_chances,
+     "ok": bool, "n": threats + chances asked, "chances": with_chances, "tactics": with_tactics (answers given before
+     the engine's tactics were asked for are checked without them),
      "items": [{"target", "found", "text", "detail"}], "extras": [{"text", "detail"}]}
     `played`: the user's own move ({"from", "to"}), drawn instead of finishing the marking: a chance it takes is
     found (he plays it), and it is never an extra arrow.
@@ -289,6 +348,9 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
     circles = [a.get("from") for a in arrows if a.get("from") and a.get("from") == a.get("to")]
     arrows = [a for a in arrows if not (a.get("from") and a.get("from") == a.get("to"))]
     keys = [*answer["threats"], *((answer.get("chances") or []) if with_chances else [])]
+    if not with_tactics:
+        keys = [t for t in keys if not t.get("tactic")]
+    chances = [t for t in (answer.get("chances") or []) if with_tactics or not t.get("tactic")]
     by_square: dict[str, list[dict]] = {}
     for t in keys:
         for sq in t.get("targets") or [t["target"]]:
@@ -315,14 +377,15 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
             why = "not_attacked"
         extra.append({"from": a, "to": b, "why": why})
     if played and with_chances:
-        for t in answer.get("chances") or []:
+        for t in chances:
             if played["to"] in (t.get("targets") or [t["target"]]) and played["from"] in t["attackers"]:
                 found.add(t["target"])
     king = after.king(not after.turn)
     his_king = chess.square_name(king) if king is not None else None
     for sq in circles:
-        t = next((t for t in (answer.get("chances") or []) if with_chances and
-                  (sq in (t.get("targets") or [t["target"]]) or (t["mate"] and sq == his_king))), None)
+        t = next((t for t in chances if with_chances and
+                  (sq in (t.get("targets") or [t["target"]]) or sq in (t.get("wins") or [])
+                   or (t["mate"] and sq == his_king))), None)
         if t:
             found.add(t["target"])
         else:
@@ -331,7 +394,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
     items = [{"target": t["target"], "found": t["target"] in found, "text": describe(t, after),
               "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in keys]
     return {"found": sorted(found), "missed": missed, "extra": extra, "ok": not missed and not extra,
-            "n": len(keys), "chances": with_chances,
+            "n": len(keys), "chances": with_chances, "tactics": with_tactics,
             "items": items, "extras": [explain_extra(x, answer, after) for x in extra]}
 
 
