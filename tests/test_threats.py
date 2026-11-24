@@ -352,3 +352,13 @@ def test_a_suicidal_check_is_optional_and_signed_as_a_check():
     key = threats.own_move(before, chess.Move.from_uci("g7g5"))
     qg5 = next(t for t in key["threats"] if t["target"] == "g4g5")
     assert qg5["optional"] and qg5["motif"] == "шах"
+
+
+def test_a_line_that_only_takes_what_is_threatened_anyway_is_no_new_item():
+    # the user's game 2026-11-24: Qe7 already hits the undefended rook b7 (the rule's threat); Bxf2+ Qxf2 Qxb7 on top
+    after = chess.Board("r4rk1/pR2qpp1/7p/8/2Bb4/2pP2P1/2P2P1P/5QK1 w - - 0 29")
+    key = threats.analyse(after)
+    assert "b7" in [t["target"] for t in key["threats"]]
+    line = [chess.Move.from_uci(u) for u in ("d4f2", "f1f2", "e7b7")]
+    threats.add_tactics(key, after, lambda b, **kw: [{"pv": line, "mate": None}] if b.turn == chess.BLACK else [])
+    assert not [t for t in key["threats"] if t.get("tactic")]

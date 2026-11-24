@@ -408,13 +408,19 @@ const MOTIF_ICON = {
   "вскрытое": '<path d="M-11.5 0C-6-7.5 6-7.5 11.5 0C6 7.5-6 7.5-11.5 0Z" fill="none" stroke="#fff" stroke-width="3.4"/><circle r="3.6" fill="#fff"/>',
 };
 const motifMark = (shape, motif, fill = "#d13b25") => badge(shape, fill, MOTIF_ICON[motif] || MARK.miss.icon);
-// a line of moves, numbered; its first move carries the sign of what it is (a fork, a pin…) when there is one
+// a line of moves, numbered 1, 2, 3…; the first move also carries the sign of what it is (a fork, a check…) near its
+// head (the user, 2026-11-24, seeing «+, 2, 3»: «опять какой-то бред с цифрами» — the 1 was missing)
 function lineShapes(line, motif = "") {
-  return line.map((st, i) => {
-    const shape = { orig: st.from, dest: st.to, brush: st.who === "you" ? "paleBlue" : "red" };
-    const fill = st.who === "you" ? "#2a78d6" : "#d13b25";
-    return i === 0 && MOTIF_ICON[motif] ? motifMark(shape, motif, fill) : numbered(shape, i + 1, fill);
-  });
+  const out = line.map((st, i) => numbered({ orig: st.from, dest: st.to, brush: st.who === "you" ? "paleBlue" : "red" },
+    i + 1, st.who === "you" ? "#2a78d6" : "#d13b25"));
+  if (line.length && MOTIF_ICON[motif]) out.push(signNear(line[0], motif, line[0].who === "you" ? "#2a78d6" : "#d13b25"));
+  return out;
+}
+// a small sign three quarters of the way along a move, clear of its number in the middle
+function signNear(st, motif, fill) {
+  const sign = cg.state.orientation === "white" ? 1 : -1;
+  const dx = (st.to.charCodeAt(0) - st.from.charCodeAt(0)) * sign, dy = (+st.from[1] - +st.to[1]) * sign;
+  return { orig: st.from, dest: st.to, customSvg: { html: `<g transform="translate(${50 + dx * 78} ${50 + dy * 78}) scale(.72)"><circle r="19" fill="${fill}" stroke="#fff" stroke-width="4"/>${MOTIF_ICON[motif]}</g>` } };
 }
 // a missed tactic of his after your move (vision/play.commit): his move in red with «!» and pale arrows to what it
 // hits; a capture that only looks like a fair trade gets its whole line, numbered — 1 his capture, 2 your taking
