@@ -286,7 +286,6 @@ details.rules p { margin: 8px 0 0; }
 .app.side-below .side { justify-self: center; }
 .app.side-below .side-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 14px 28px;
   align-content: start; }
-.app.side-below .hero { grid-column: 1; grid-row: 1; }
 .app.side-below #go { grid-column: 1; grid-row: 2; }
 .app.side-below #level { grid-column: 1; grid-row: 3; }
 .app.side-below details.rules { grid-column: 1; grid-row: 4; }
