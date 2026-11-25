@@ -796,7 +796,18 @@ function playShow(v) {
 function playStep(v) {
   if (v.phase === "check") return startDrawing(null);
   if (v.phase === "plan") return startPlan(v);
-  if (v.phase === "next") return seriesEnd(v, null);
+  if (v.phase === "next") return v.lost_review ? showLost(v) : seriesEnd(v, null);
+}
+// the series ended lost: why, on the board — your last move (grey ✕) and his answer, the right move, both lines to
+// step through (the sequence after your move shows the loss), the words beside the board; «Дальше»: the next series
+function showLost(v) {
+  S.phase = "review";
+  cg.set({ lastMove: undefined }); // the board goes back to before your move: his last move is not lit there
+  showDecision(v.lost_review, () => nextSeries("button"));
+  S.decLast = undefined;
+  const e = v.series_end;
+  if (e) S.review.chip = { text: `${e.next_level > e.level_was ? "▲" : e.next_level < e.level_was ? "▼" : "↻"} ${e.next_level}`, title: "Позиция проиграна" };
+  syncMode();
 }
 // «проверь свой ход»: draw your move (blue), then what he can do after it (orange); «Хожу» checks and plays it.
 // `hints`: the threats you were just shown, pale, until you draw your move
@@ -854,7 +865,7 @@ function afterMove(v, mv, drawn, capture) {
     auto.push(...(t.optional ? missedArrows(t, false, "paleOrange") : missedArrows(t, true)));
   }
   for (const at of v.own.attacks) if (!found.has(at.key)) auto.push(...attackShapes(at));
-  if (res.ok) return goOn(v); // all seen: the opponent answers at once
+  if (res.ok) return v.lost_review ? showLost(v) : goOn(v); // all seen: the opponent answers at once
   const shapes = user;
   S.reviewShapes = shapes;
   cg.setShapes(shapes);
@@ -1047,7 +1058,8 @@ function seriesEnd(v, review) {
   const e = v.series_end;
   const lost = !!e?.lost;
   if (!review) S.review = { kind: lost ? "fail" : "end", text: "Серия закончена" };
-  Object.assign(S.review, { label: v.last ? "Итог" : "Дальше", onNext: nextSeries });
+  // lost: «Дальше» shows why first (your last move against the right one, and the line that wins against you)
+  Object.assign(S.review, { label: v.last ? "Итог" : "Дальше", onNext: v.lost_review ? () => showLost(v) : nextSeries });
   if (e && (e.length > 1 || e.next_level !== e.level_was)) {
     const up = e.next_level > e.level_was, down = e.next_level < e.level_was;
     const n = e.next_level, word = plural(n, "ход", "хода", "ходов");
@@ -1145,7 +1157,7 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- the window's tests (tests/browser, a page opened with ?test): what the board shows ----------
 if (/[?&]test\b/.test(location.search)) {
-  window.__bv = { fen: () => cg.getFen(), phase: () => S.phase, decision: () => S.dec,
+  window.__bv = { fen: () => cg.getFen(), phase: () => S.phase, decision: () => S.dec, showLost: (v) => { setPlaying(true); showLost(v); },
     shapes: () => ({ user: cg.state.drawable.shapes, auto: cg.state.drawable.autoShapes }) };
 }
 

@@ -183,9 +183,12 @@ def _bot_turn(p: dict) -> dict:
     if board.is_game_over():
         shown["series_end"] = _end_series(p, game_over=True)
         p["phase"] = "next"
-    elif _lost(p):  # no play on in a lost position: the next series
+    elif _lost(p):  # no play on in a lost position: the next series — with why: your last move against the best
         shown["series_end"] = _end_series(p, lost=True)
         p["phase"] = "next"
+        last = p.get("last_user")
+        if last and not last["explained"]:
+            shown["lost_review"] = _lost_review(chess.Board(last["before"]), chess.Move.from_uci(last["move"]), mv)
     elif board.is_check():
         p["phase"] = "plan"  # answer the check (no threat check here: the check is the threat)
         shown["check"] = True
@@ -347,6 +350,34 @@ def _review(task: dict, step: int, board: chess.Board, mv: chess.Move) -> dict:
             "your": {"from": mv.uci()[:2], "to": mv.uci()[2:4], "san": board.san(mv)}}
 
 
+PROOF = 10  # half-moves of the line that shows why your move lost: his best answers and yours, to the win or the mate
+
+
+def _lost_review(before: chess.Board, mv: chess.Move, reply: chess.Move | None = None) -> dict:
+    """Why the series ended lost: on the position before your last move `mv` — the right move there with its line,
+    and your move with his best answers after it (`reply`: his move already played) as far as PROOF half-moves:
+    the sequence that shows the loss (the user, 2026-11-25). The same shape as a task's review (`_review`)."""
+    me = before.turn
+    best_cp, best_pv = engine.line(before, me)
+    after = before.copy(stack=False)
+    after.push(mv)
+    now, pv = engine.line(after, me)
+    if reply is not None:
+        b = after.copy(stack=False)
+        b.push(reply)
+        pv = [reply, *engine.line(b, me)[1]]
+    best = best_pv[0] if best_pv else mv
+    if best == mv:  # your move was the best there is: the position was lost already
+        why = "Позиция была проиграна уже до этого хода: и лучший ход не спасал. Вот как соперник выигрывает: " + \
+              explain.san_line(after, pv[:PROOF]) + "."
+    else:
+        why = explain.why_worse(before, mv, pv, now, best_cp, before.san(best))
+    return {"name": "Позиция проиграна", "kind": "lost", "title": "", "idea": "", "why": why,
+            "best_san": before.san(best), "line": tasks.steps_of(before, best_pv[:5]), "draw": 1,
+            "your_line": tasks.steps_of(before, [mv, *pv[:PROOF]]), "before": before.fen(),
+            "your": {"from": mv.uci()[:2], "to": mv.uci()[2:4], "san": before.san(mv)}}
+
+
 def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
     """The user's own move with his arrows of what the opponent can do after it: checked, then played."""
     p = PLAYS[pid]
@@ -404,9 +435,12 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
     if dec is not None:
         extra["decision"] = dec
     lost = not board.is_game_over() and _lost(p)  # your move lost the game: the series ends here
+    p["last_user"] = {"before": before_fen, "move": mv.uci(), "explained": bool(dec and not dec["ok"])}
     if board.is_game_over() or lost or sr["checks"] >= sr["length"]:  # no move of his after this one
         p["phase"] = "next"
         extra["series_end"] = _end_series(p, game_over=board.is_game_over(), lost=lost)
+        if lost and not (dec and not dec["ok"]):  # a failed task's review has shown the right move already
+            extra["lost_review"] = _lost_review(chess.Board(before_fen), mv)
         extra["last"] = False  # the sitting goes on until the user leaves
     else:
         p["phase"] = "bot"

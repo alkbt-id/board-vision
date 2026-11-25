@@ -4,7 +4,7 @@ at each step of a task, what it records, when a series ends."""
 import chess
 
 from conftest import BACK_RANK, BACK_RANK_MOVE, BACK_RANK_STEPS, add_task
-from vision import play, store, tasks
+from vision import play, store, tasks, threats
 
 SCHOLAR = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR b KQkq - 3 3"  # Black is about to play Nd4??
 
@@ -145,6 +145,68 @@ def play_level(n: int) -> None:
 
 
 def _after(board: chess.Board, uci: str) -> chess.Board:
+    b = board.copy()
+    b.push_uci(uci)
+    return b
+
+
+# a series that ends lost explains why (2026-11-25: «Позиция проиграна» alone said nothing): on the position before your
+# last move — the right move there with its line, your move with his answers, the words
+def _plain_series(fake, level=3):
+    """A series on a plain pool position (no task): the scholar's position, Black to move after …Nc6."""
+    fen = "rnbqkbnr/pppp1ppp/8/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR b KQkq - 2 2"
+    store.add_item("own", fen, "b8c6", "w", threats.analyse(_after(chess.Board(fen), "b8c6")))
+    play_level(level)
+    pid, _ = _start()
+    return pid
+
+
+def test_a_series_lost_by_your_move_shows_why(fake):
+    pid = _plain_series(fake)
+    p = _to_move(pid)
+    before = p["board"].copy()
+    fake.best[fake.key(before)] = "f3e2"
+    fake.pv[fake.key(before)] = ["f3e2", "g8f6"]
+    lost_after = _after_board(before, "a2a3")
+    fake.evals[fake.key(lost_after)] = -900
+    fake.pv[fake.key(lost_after)] = ["f8c5"]
+    c = play.commit(pid, "a2a3", [], 100)
+    assert c["series_end"]["lost"]
+    r = c["lost_review"]
+    assert r["name"] == "Позиция проиграна" and r["best_san"] == "Qe2"
+    assert [s["san"] for s in r["your_line"][:2]] == ["a3", "Bc5"]
+    assert r["line"][0]["san"] == "Qe2" and r["why"]
+
+
+def test_a_series_lost_after_his_move_shows_your_last_move(fake):
+    pid = _plain_series(fake)
+    p = _to_move(pid)
+    before = p["board"].copy()
+    fake.pv[fake.key(before)] = ["f3e2"]
+    c = play.commit(pid, "a2a3", [], 100)  # not lost yet
+    assert c["phase"] == "bot" and "lost_review" not in c
+    after = _after_board(before, "a2a3")
+    fake.best[fake.key(after)] = "f8c5"
+    fake.evals[fake.key(_after_board(after, "f8c5"))] = -700
+    b = play.next_series(pid)
+    assert b["series_end"]["lost"]
+    r = b["lost_review"]
+    assert [s["san"] for s in r["your_line"][:2]] == ["a3", "Bc5"]  # your move and his answer that decided it
+    assert r["line"][0]["san"] == "Qe2"
+
+
+def test_a_failed_task_needs_no_second_review_when_the_series_is_lost(fake):
+    add_task(SCHOLAR, "c6d4", [{"best": "f3f7", "accept": ["f3f7"], "reply": None, "margin": None}])
+    play_level(3)
+    pid, _ = _start()
+    p = _to_move(pid)
+    fake.evals[fake.key(_after_board(p["board"], "c4b5"))] = -900
+    c = play.commit(pid, "c4b5", [], 100)
+    assert not c["decision"]["ok"] and c["series_end"]["lost"]
+    assert "lost_review" not in c  # the task's review already shows the right move and why
+
+
+def _after_board(board: chess.Board, uci: str) -> chess.Board:
     b = board.copy()
     b.push_uci(uci)
     return b

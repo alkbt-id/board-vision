@@ -187,3 +187,30 @@ def test_a_wrong_move_in_a_task_is_shown_on_the_board(server, browser):
     page.click("#bm-btn")  # «Дальше»: your move is played, the review goes away
     page.wait_for_function("() => document.querySelector('#explain').hidden")
     page.close()
+
+
+def test_a_lost_series_shows_why_on_the_board(server, browser):
+    # the review of a lost series, drawn from what the server sends: 1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6?? 4.Qxf7#-like —
+    # here Black's …Nf6?? lets Qxf7 mate: the right move, Black's move, and White's line that shows the loss
+    from vision import engine, play
+
+    before = chess.Board("r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3")
+    review = play._lost_review(before, chess.Move.from_uci("g8f6"))
+    engine.close()
+    page = browser.new_page(viewport={"width": 1280, "height": 860})
+    page.goto(f"{server}/?test")
+    page.wait_for_function("() => window.__bv")
+    page.evaluate("(v) => window.__bv.showLost(v)", {"lost_review": review, "series_end": {"lost": True, "next_level": 2,
+                                                                                            "level_was": 2}})
+    assert _strip(page).startswith(f"Позиция проиграна — надо было {review['best_san']}")
+    assert page.evaluate("window.__bv.fen()") == before.board_fen()
+    text = page.inner_text("#explain")
+    assert "Надо было:" in text and "Твой ход:" in text
+    yours = page.locator('#explain .exmv[data-line="yours"]')
+    assert yours.count() >= 2  # Nf6 and Qxf7#: the line that shows the loss
+    page.click('#explain .exmv[data-line="yours"][data-i="1"]')
+    after = before.copy()
+    after.push_uci("g8f6")
+    after.push_uci(review["your_line"][1]["from"] + review["your_line"][1]["to"])
+    assert page.evaluate("window.__bv.fen()") == after.board_fen()
+    page.close()
