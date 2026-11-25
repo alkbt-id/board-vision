@@ -39,7 +39,7 @@ def test_nd5_is_not_counted_rfd1_is(stockfish):
 
 
 def test_nd5_review_draws_his_answer_rxb3(stockfish):
-    # the user: «не показана угроза взятия слона после хода» — his answer must be in the review, as a move on the board
+    # the review once named his answer (taking the bishop) only in words: it must be a move on the board too
     board = _after(*ND5)
     review = play._review(ND5_TASK, 0, board, chess.Move.from_uci("c3d5"))
     assert [s["san"] for s in review["your_line"][:2]] == ["Nd5", "Rxb3"]
