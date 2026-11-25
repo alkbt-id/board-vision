@@ -490,6 +490,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
     return {"found": sorted(found), "missed": missed, "extra": extra, "ok": not missed and not extra,
             "n": sum(1 for t in keys if not t.get("optional")), "chances": with_chances, "tactics": with_tactics,
             "threats_asked": with_threats, "checks": with_checks,
+            **({"played": played} if played else {}),  # kept: a re-check (vision/migrate.py) needs the move too
             "items": items, "extras": [explain_extra(x, answer, after) for x in extra]}
 
 

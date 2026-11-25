@@ -20,6 +20,9 @@ History:
      every check of his is a mark (one that just loses the checking piece optional), his quiet forks and pins that
      win (the engine's) too. Answers given before were not asked for checks: checked without them (their stored
      result has no "checks": true). n_threats counts only the marks to make (not the optional ones)
+  9  a re-check keeps a chance taken by the move drawn at once instead of marking it (no arrow for it): the result
+     keeps that move ("played") since; an older answer keeps the chances it had found (rule 8's re-check had turned
+     one such answer wrong)
 The engine's tactics (forced mates in 2–3, winning checks: threats.add_tactics) are not the rule's: a position keeps
 the ones it has when its key is computed again, and an answer is checked with them only if it was asked for them
 (its stored result has "tactics": true).
@@ -31,7 +34,7 @@ import chess
 
 from . import events, store, threats
 
-RULE_VERSION = "8"
+RULE_VERSION = "9"
 
 
 def _own_moves() -> int:
@@ -63,6 +66,20 @@ def _own_moves() -> int:
     return n
 
 
+def _keep_found_chances(res: dict, stored: dict, answer: dict) -> None:
+    """An answer stored without its move drawn at once: the chances it had found stay found (it may have been the
+    move that took them — there is no arrow for that)."""
+    chances = {t["target"] for t in answer.get("chances") or []}
+    keep = [t for t in stored.get("found") or [] if t in chances and t in res["missed"]]
+    if not keep:
+        return
+    res["found"] = sorted(set(res["found"]) | set(keep))
+    res["missed"] = [m for m in res["missed"] if m not in keep]
+    res["ok"] = not res["missed"] and not res["extra"]
+    for it in res.get("items") or []:
+        it["found"] = it["found"] or it["target"] in keep
+
+
 def run() -> None:
     if store.meta_get("rule_version", "1") == RULE_VERSION:
         return
@@ -92,7 +109,9 @@ def run() -> None:
         stored = json.loads(a["result"] or "{}")
         res = threats.check(answer, json.loads(a["arrows"] or "[]"), after, with_chances=bool(stored.get("chances")),
                             with_tactics=bool(stored.get("tactics")), with_threats=stored.get("threats_asked", True),
-                            with_checks=bool(stored.get("checks")))
+                            with_checks=bool(stored.get("checks")), played=stored.get("played"))
+        if "played" not in stored:
+            _keep_found_chances(res, stored, answer)
         store.run("UPDATE attempts SET n_threats=?, found=?, missed=?, extra=?, ok=?, result=? WHERE id=?",
                   (res["n"], len(res["found"]), len(res["missed"]), len(res["extra"]), int(res["ok"]),
                    json.dumps(res, ensure_ascii=False), a["id"]))
