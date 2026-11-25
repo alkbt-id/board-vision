@@ -42,6 +42,9 @@ CHECKS = 15
 REPEAT_SHARE = 0.3
 MAX_LEVEL = 30
 NOT_LOST = -300  # a series (level 2+) starts only where your side, playing best, is not worse than this (cp)
+# your forced mate within 5 moves (Stockfish, mate_score 10000): his threats need not be marked, and a move of yours
+# that keeps the mate is not checked for marks after it (the user, 2026-11-25: a chore, and no mistakes in a forced line)
+MATE_RELAX = 10_000 - 5
 TRIES = 8  # start positions tried before falling back to a single check
 PLAYS: dict[str, dict] = {}
 
@@ -242,8 +245,10 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
         mv = chess.Move.from_uci(move[:4])
         if any(m.from_square == mv.from_square and m.to_square == mv.to_square for m in board.legal_moves):
             played = {"from": move[:2], "to": move[2:4]}
-    # his threats now and his pieces you can win — the threats before your move came back
-    result = threats.check(key, arrows, board, played=played)
+    # his threats now and his pieces you can win — the threats before your move came back; with a forced mate of
+    # yours on the board his threats are optional
+    e = engine.evaluate(board, p["user"])
+    result = threats.check(key, arrows, board, played=played, mate_relax=e is not None and e >= MATE_RELAX)
     chances = key.get("chances") or []
     item_id = p["item"]
     if item_id is None:  # a position reached in play: store it like a pool position
@@ -373,6 +378,9 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
             item["line"] = threats.recapture_line(board, reply, engine.best_move)  # a «fair» trade that is not
             key["attacks"].append(item)
     result = threats.check_own(key, arrows, board)
+    if board.is_checkmate() or (not board.is_game_over() and (engine.evaluate(board, p["user"]) or 0) >= MATE_RELAX):
+        # a move of your forced mate: the marks after it are not checked (missed ones are no mistake)
+        result = {**result, "missed": [], "extra": [], "ok": True, "mate_line": True}
     needed = len([t for t in key["threats"] if not t.get("optional")]) + len(key["attacks"])
     side = "w" if p["user"] == chess.WHITE else "b"
     store.add_item("ownmove", before_fen, mv.uci(), side, {**key, "threats": key["threats"]}, ref=pid,

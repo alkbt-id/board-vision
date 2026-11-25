@@ -96,3 +96,10 @@ def test_c5_review_says_the_threat_was_parried(stockfish):
     assert review["why"].startswith("Угрозу ты отразил, но")
     review = play._review(ND5_TASK, 0, _after(*ND5), chess.Move.from_uci("c3d5"))  # Nd5 did not parry anything
     assert not review["why"].startswith("Угрозу ты отразил")
+
+
+def test_the_mate_in_one_position_is_a_forced_mate_for_stockfish(stockfish):
+    # the user's Qh7# position: the relaxing of step 1 is decided by this evaluation
+    board = chess.Board("r1bqr1k1/1p1n1p2/p1n1p2Q/2bpP2P/6P1/2NB1N2/PPP2P2/R4RK1 b - - 0 15")
+    board.push_uci("c5f8")
+    assert engine.evaluate(board, chess.WHITE) >= play.MATE_RELAX

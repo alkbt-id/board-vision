@@ -109,7 +109,8 @@ def run() -> None:
         stored = json.loads(a["result"] or "{}")
         res = threats.check(answer, json.loads(a["arrows"] or "[]"), after, with_chances=bool(stored.get("chances")),
                             with_tactics=bool(stored.get("tactics")), with_threats=stored.get("threats_asked", True),
-                            with_checks=bool(stored.get("checks")), played=stored.get("played"))
+                            with_checks=bool(stored.get("checks")), played=stored.get("played"),
+                            mate_relax=bool(stored.get("mate_relax")))
         if "played" not in stored:
             _keep_found_chances(res, stored, answer)
         store.run("UPDATE attempts SET n_threats=?, found=?, missed=?, extra=?, ok=?, result=? WHERE id=?",

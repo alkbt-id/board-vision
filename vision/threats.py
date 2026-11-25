@@ -423,7 +423,7 @@ def required(answer: dict) -> int:
 
 def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bool = True,
           played: dict | None = None, with_tactics: bool = True, with_threats: bool = True,
-          with_checks: bool = True) -> dict:
+          with_checks: bool = True, mate_relax: bool = False) -> dict:
     """Compare the user's arrows ({"from": "d8", "to": "d4"}) with the answer key: his threats and, with
     `with_chances` (answers given before 2026-11-24 were not asked for them), the user's own chances.
 
@@ -432,6 +432,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
      the engine's tactics were asked for are checked without them), "threats_asked": with_threats (since 2026-11-24
      the user marks only his chances here: his threats are checked after the user's own move, vision/play.commit),
      "checks": with_checks (his checks are marks in step 1 since rule 8; older answers are checked without them),
+     "mate_relax": you have a forced mate (vision/play.MATE_RELAX): his threats are optional — the mate is the thing,
      "items": [{"target", "found", "text", "detail"}], "extras": [{"text", "detail"}]}
     `played`: the user's own move ({"from", "to"}), drawn instead of finishing the marking: a chance it takes is
     found (he plays it), and it is never an extra arrow.
@@ -444,6 +445,9 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
         keys = [t for t in keys if not t.get("tactic")]
     if not with_checks:
         keys = [t for t in keys if t.get("kind") != "check"]
+    if mate_relax:  # your forced mate: his threats need not be marked (drawn, they are right; left out, no miss)
+        his_ids = {id(t) for t in answer["threats"]}
+        keys = [{**t, "optional": True} if id(t) in his_ids else t for t in keys]
     chances = [t for t in (answer.get("chances") or []) if with_tactics or not t.get("tactic")]
     by_square: dict[str, list[dict]] = {}
     for t in keys:
@@ -489,7 +493,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
               "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in keys]
     return {"found": sorted(found), "missed": missed, "extra": extra, "ok": not missed and not extra,
             "n": sum(1 for t in keys if not t.get("optional")), "chances": with_chances, "tactics": with_tactics,
-            "threats_asked": with_threats, "checks": with_checks,
+            "threats_asked": with_threats, "checks": with_checks, "mate_relax": mate_relax,
             **({"played": played} if played else {}),  # kept: a re-check (vision/migrate.py) needs the move too
             "items": items, "extras": [explain_extra(x, answer, after) for x in extra]}
 
