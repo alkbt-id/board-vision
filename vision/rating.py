@@ -6,7 +6,7 @@ Like a puzzle rating (Elo): every answer moves the rating by how much better or 
 so a right answer on a hard position raises it a lot and a miss on an easy one lowers it a lot. That is why the
 rating does not drift up just because sessions get more quiet positions or repeats: an easy position that is
 answered right is expected to be, and moves it little. Repeats (a position seen before) do not count at all —
-they can be remembered.
+they can be remembered; nor do answers under your forced mate (his threats optional there, vision/play.MATE_RELAX).
 
 A position's difficulty is a base plus points for what makes a threat hard to see — the kinds Afek & Neiman
 describe in «Невидимые шахматные ходы» and what the research on blunders points at:
@@ -216,6 +216,9 @@ def replay() -> list[dict]:
     rating = float(START)
     out = []
     for r in rows:
+        res = json.loads(r["result"] or "{}")
+        if res.get("mate_relax") or res.get("mate_line"):
+            continue  # under your forced mate his threats were optional: says nothing of your attention (2026-11-25)
         f = _item_features(r["item"], r["fen"], r["move"], r["answer"], r["source"])
         if r["source"] != "ownmove":
             if r["result"] and json.loads(r["result"]).get("threats_asked") is False:

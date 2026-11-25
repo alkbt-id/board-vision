@@ -71,3 +71,31 @@ def test_step_3_off_the_mating_line_is_checked_as_usual(fake):
     c = play.commit(pid, "a2a3", [], 100)  # the engine stand-in: a normal position — his Bxh6 is to be marked
     assert not c["own"]["result"].get("mate_line")
     assert "h6" in c["own"]["result"]["missed"]
+
+
+def test_answers_under_the_mate_relaxing_do_not_move_the_attention_rating(clean_db):
+    # with your forced mate his threats were optional (a free step 1, or marks not checked on the mating line): such an
+    # answer says nothing about your attention — it must neither raise nor lower the rating (the user, 2026-11-25)
+    from vision import rating
+
+    board = _after(*POS)
+    key = threats.analyse(board)
+    store.add_item("own", POS[0], POS[1], "w", key)
+    item = store.q("SELECT id FROM items")[0]["id"]
+    relaxed = threats.check(key, [], board, mate_relax=True)
+    relaxed["ok"] = True
+    store.record(item, "s", 1000, relaxed["n"], relaxed, [])
+    assert rating.replay() == [] and rating.current()[0] == rating.START
+    store.run("DELETE FROM attempts")
+    plain = threats.check(key, [], board)
+    store.record(item, "s", 1000, plain["n"], plain, [])
+    assert len(rating.replay()) == 1 and rating.current()[0] != rating.START
+
+
+def test_a_move_on_the_mating_line_does_not_move_the_attention_rating(clean_db):
+    from vision import rating
+
+    store.add_item("ownmove", POS[0], POS[1], "w", {"threats": [], "attacks": [], "defended": [], "exchanges": {}})
+    item = store.q("SELECT id FROM items")[0]["id"]
+    store.record(item, "s", 1000, 0, {"found": [], "missed": [], "extra": [], "ok": True, "mate_line": True}, [])
+    assert rating.replay() == []
