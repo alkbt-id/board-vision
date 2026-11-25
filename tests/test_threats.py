@@ -393,3 +393,37 @@ def test_a_capture_with_tempo_keeps_its_threat():
     board = chess.Board("4k2r/1bq2pb1/4p3/1p4p1/2pN4/R7/1P2BPPP/3Q1RK1 b k - 0 17")
     board.push(chess.Move.null())
     assert "b5" in {t["target"] for t in threats.opponent_key(board)["threats"]}
+
+
+# 2026-11-25 10:40: g2 was shown as a pawn to win (Bxg2), counted as if White took back with the queen (Qxg2 Rxg2+, the
+# g-file opening behind it). White takes back with the king, Bxg2 Kxg2, and the bishop is lost: g2 does not hang.
+# The defender picks his best way to take back, not always his cheapest piece.
+G2 = "6k1/6p1/6r1/2Rp3p/1p1Pb2P/6Q1/P1r2PP1/5RK1 b - - 0 34"
+
+
+def _chance_targets(fen: str) -> set[str]:
+    key = threats.analyse(chess.Board(fen))
+    assert key is not None
+    return {t["target"] for t in key["chances"]}
+
+
+def test_a_pawn_the_king_can_take_back_safely_does_not_hang():
+    assert "g2" not in _chance_targets(G2)
+    assert {"g3", "a2"} <= _chance_targets(G2)  # the queen and the a-pawn are still to be won
+
+
+def test_the_same_with_colours_reversed():
+    mirror = chess.Board(G2).mirror()
+    assert "g7" not in _chance_targets(mirror.fen())
+
+
+def test_when_the_king_cannot_take_back_the_pawn_does_hang():
+    # a black knight on e3 also hits g2: after Bxg2 the king cannot take, and the queen taking opens the g-file
+    fen = G2.replace("6Q1", "4n1Q1")
+    assert "g2" in _chance_targets(fen)
+
+
+def test_the_exchange_line_shows_the_kings_recapture():
+    board = chess.Board(G2)
+    ex = threats.exchange(board, chess.Move.from_uci("e4g2"))
+    assert ex["line"][:2] == ["Bxg2", "Kxg2"] and ex["gain"] < 0

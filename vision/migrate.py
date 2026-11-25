@@ -23,6 +23,8 @@ History:
   9  a re-check keeps a chance taken by the move drawn at once instead of marking it (no arrow for it): the result
      keeps that move ("played") since; an older answer keeps the chances it had found (rule 8's re-check had turned
      one such answer wrong)
+ 10  the defender takes back in his best way, his king included: Bxg2 Kxg2 is no win of a pawn just because Qxg2 would
+     open the g-file behind the queen (2026-11-25: g2 was shown as a pawn to win)
 The engine's tactics (forced mates in 2–3, winning checks: threats.add_tactics) are not the rule's: a position keeps
 the ones it has when its key is computed again, and an answer is checked with them only if it was asked for them
 (its stored result has "tactics": true).
@@ -34,7 +36,7 @@ import chess
 
 from . import events, store, threats
 
-RULE_VERSION = "9"
+RULE_VERSION = "10"
 
 
 def _own_moves() -> int:

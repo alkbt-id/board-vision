@@ -68,20 +68,34 @@ def _order(board: chess.Board, move: chess.Move) -> int:
     return ORDER[board.piece_type_at(move.from_square) or chess.PAWN]
 
 
-def _swap(board: chess.Board, square: int) -> int:
-    """The most the side to move wins by recapturing on `square` (0 when stopping is better)."""
-    if board.piece_type_at(square) == chess.KING:
-        return 0
+def _recaptures(board: chess.Board, square: int) -> list[chess.Move]:
+    """The ways the side to move may take on `square`: its cheapest piece, and its king when that is legal (a king
+    takes back last as a rule, but it may be the better choice: Bxg2 Kxg2 instead of Qxg2, which would open the g-file
+    to the rook behind the queen — found 2026-11-25)."""
     caps = list(board.generate_legal_captures(to_mask=chess.BB_SQUARES[square]))
     if not caps:
+        return []
+    out = [min(caps, key=lambda m: ORDER[board.piece_type_at(m.from_square) or chess.PAWN])]
+    king = next((m for m in caps if board.piece_type_at(m.from_square) == chess.KING), None)
+    if king is not None and king != out[0]:
+        out.append(king)
+    return out
+
+
+def _swap(board: chess.Board, square: int) -> int:
+    """The most the side to move wins by recapturing on `square` (0 when stopping is better), taking back in its
+    best way (`_recaptures`)."""
+    if board.piece_type_at(square) == chess.KING:
         return 0
-    move = min(caps, key=lambda m: ORDER[board.piece_type_at(m.from_square) or chess.PAWN])
-    gain = _taken(board, move)
-    board.push(move)
-    try:
-        return max(0, gain - _swap(board, square))
-    finally:
-        board.pop()
+    best = 0
+    for move in _recaptures(board, square):
+        gain = _taken(board, move)
+        board.push(move)
+        try:
+            best = max(best, gain - _swap(board, square))
+        finally:
+            board.pop()
+    return best
 
 
 def _exposed(board: chess.Board, move: chess.Move) -> tuple[int, chess.Move | None]:
@@ -131,16 +145,16 @@ def capture_gain(board: chess.Board, move: chess.Move) -> int:
 
 
 def _play_out(board: chess.Board, moves: list[chess.Move], square: int) -> list[chess.Move]:
-    """`moves` already played on `square`, then each side takes back with its cheapest piece while that pays."""
+    """`moves` already played on `square`, then each side takes back in its best way (`_recaptures`) while that pays."""
     b = board.copy(stack=False)
     for m in moves:
         b.push(m)
     out = list(moves)
     while True:
-        caps = list(b.generate_legal_captures(to_mask=chess.BB_SQUARES[square]))
-        if not caps:
+        options = _recaptures(b, square)
+        if not options:
             return out
-        move = min(caps, key=lambda m: ORDER[b.piece_type_at(m.from_square) or chess.PAWN])
+        move = max(options, key=lambda m: capture_gain(b, m))
         if capture_gain(b, move) <= 0:
             return out
         out.append(move)
@@ -172,9 +186,9 @@ def exchange(board: chess.Board, first: chess.Move) -> dict:
     if len(out["line"]) == 1:
         b = board.copy(stack=False)
         b.push(first)
-        caps = list(b.generate_legal_captures(to_mask=chess.BB_SQUARES[square]))
-        if caps:
-            back = min(caps, key=lambda m: ORDER[b.piece_type_at(m.from_square) or chess.PAWN])
+        options = _recaptures(b, square)
+        if options:
+            back = max(options, key=lambda m: capture_gain(b, m))
             out["if_recapture"] = _line(board, _play_out(board, [first, back], square))
     return out
 
