@@ -638,8 +638,9 @@ function drawCharts() {
 function drawDecisions() {
   const el = $("#ch-dec");
   if (!el) return;
-  const dp = progress?.decisions?.points || [];
-  if (dp.length < 2) { el.innerHTML = `<p class="muted">График решений появится после двух задач.</p>`; return; }
+  // from the starting rating on: a chart from the very first task (before it, the start alone)
+  const d = progress?.decisions, pts = d?.points || [];
+  const dp = [{ ts: pts.length ? pts[0].ts - 1 : Date.now(), rating: d?.start ?? 1300 }, ...pts];
   lineChart(el, dp, { key: "rating", height: 110, title: "Решения по задачам", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
 }
 function heroBlock(now, prev, n, label, sub) {
