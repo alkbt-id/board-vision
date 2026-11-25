@@ -6,6 +6,8 @@
   missed.py      moments of those games where a player did not see a threat and the opponent then took (real misses)
   quiet.py       Stockfish's check of positions without threats: only truly quiet ones are shown as quiet
   tactics.py     Stockfish's forcing lines (mates in 2–3, winning checks) for the pool: threats the rule does not see
+  prepare.py     tasks for the move (vision/tasks.py), prepared in a background loop of their own: Stockfish, Maia,
+                 the tablebase and Claude; lichess_api.py fetches puzzles, games and the tablebase for it
 
 `refresh()` runs them in order and reports progress through `STATUS` and the event log; the window polls
 /api/state and can start training as soon as there are enough positions.
