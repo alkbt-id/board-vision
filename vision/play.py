@@ -331,7 +331,10 @@ def _review(task: dict, step: int, board: chess.Board, mv: chess.Move) -> dict:
     now, pv = engine.line(after, me)  # his answer to your move: your line on the board, and words if none are prepared
     if not why:
         best_cp, _ = engine.line(board, me)
-        why = explain.why_worse(board, mv, pv, now, best_cp, board.san(best))
+        # a threat parried but the move still wrong for what it costs otherwise: the words say so, or a parry marked
+        # wrong looks like a missed threat
+        parried = task["kind"] == "threat" and not threats.required(threats.own_move(board, mv))
+        why = explain.why_worse(board, mv, pv, now, best_cp, board.san(best), parried=parried)
     # a line is drawn whole; a one-step task only its move (the engine's continuation is text: arrows of it are noise).
     # Both lines — the right one and yours with his best answers — can be stepped through on the board.
     return {"line": line, "draw": len(line) if len(task["steps"]) > 1 else 1, "why": why, "idea": task.get("idea", ""),

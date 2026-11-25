@@ -105,3 +105,10 @@ def test_a_line_carries_the_sign_of_each_move():
     board = chess.Board("rnbqkbnr/ppp2ppp/8/3pp3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3")
     moves = [chess.Move.from_uci(u) for u in ("f1b5", "c7c6", "e4d5", "c6b5")]
     assert [s["sign"] for s in tasks.steps_of(board, moves)] == ["шах", "", "взятие", "взятие"]
+
+
+def test_why_worse_says_first_that_the_threat_was_parried():
+    board = chess.Board()
+    text = explain.why_worse(board, chess.Move.from_uci("g2g4"), [chess.Move.from_uci("e7e5")], -80, 30, "e4",
+                             parried=True)
+    assert text.startswith("Угрозу ты отразил, но позиция хуже: Stockfish даёт −0,8 против +0,3 после e4")

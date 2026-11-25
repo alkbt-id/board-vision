@@ -87,3 +87,12 @@ def test_his_capture_and_check_answers_are_signed(stockfish):
     board = _after(*ND5)
     review = play._review(ND5_TASK, 0, board, chess.Move.from_uci("c3d5"))
     assert review["your_line"][1]["san"] == "Rxb3" and review["your_line"][1]["sign"] == "взятие"
+
+
+def test_c5_review_says_the_threat_was_parried(stockfish):
+    # the user parried Nxc6 with …c5 and still got «wrong»: the words must say why — parried, but the position is worse
+    board = _after(*C5)
+    review = play._review(C5_TASK, 0, board, chess.Move.from_uci("c6c5"))
+    assert review["why"].startswith("Угрозу ты отразил, но")
+    review = play._review(ND5_TASK, 0, _after(*ND5), chess.Move.from_uci("c3d5"))  # Nd5 did not parry anything
+    assert not review["why"].startswith("Угрозу ты отразил")

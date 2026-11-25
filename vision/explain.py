@@ -89,9 +89,20 @@ def pawns(cp: int) -> str:
 
 
 def why_worse(board: chess.Board, move: chess.Move, pv: list[chess.Move], now: int | None, best: int | None,
-              best_san: str) -> str:
+              best_san: str, parried: bool = False) -> str:
     """One or two sentences: what Stockfish's line after `move` does (`pv`: his reply first), and how the position
-    then compares with the best move (`now`, `best`: evaluations for the mover, centipawns)."""
+    then compares with the best move (`now`, `best`: evaluations for the mover, centipawns). `parried`: the move did
+    parry his threat — said first, so the verdict is not read as a missed threat."""
+    text = _why(board, move, pv, now, best, best_san)
+    if not parried:
+        return text
+    if text.startswith(f"После {board.san(move)} материал не теряется, но позиция хуже"):
+        return "Угрозу ты отразил, но позиция хуже" + text[len(f"После {board.san(move)} материал не теряется, но позиция хуже"):]
+    return "Угрозу ты отразил, но " + text[0].lower() + text[1:]
+
+
+def _why(board: chess.Board, move: chess.Move, pv: list[chess.Move], now: int | None, best: int | None,
+         best_san: str) -> str:
     me = board.turn
     san = board.san(move)
     after = board.copy(stack=False)
