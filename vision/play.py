@@ -325,16 +325,17 @@ def _review(task: dict, step: int, board: chess.Board, mv: chess.Move) -> dict:
             why = f"По таблицам эндшпиля после {board.san(mv)} — {got}, а после {board.san(best)} — {want}."
         except lichess_api.Unavailable:
             why = ""
+    me = board.turn
+    after = board.copy(stack=False)
+    after.push(mv)
+    now, pv = engine.line(after, me)  # his answer to your move: your line on the board, and words if none are prepared
     if not why:
-        me = board.turn
-        after = board.copy(stack=False)
-        after.push(mv)
-        now, pv = engine.line(after, me)
         best_cp, _ = engine.line(board, me)
         why = explain.why_worse(board, mv, pv, now, best_cp, board.san(best))
-    # a line is drawn whole; a one-step task only its move (the engine's continuation is text: arrows of it are noise)
+    # a line is drawn whole; a one-step task only its move (the engine's continuation is text: arrows of it are noise).
+    # Both lines — the right one and yours with his best answers — can be stepped through on the board.
     return {"line": line, "draw": len(line) if len(task["steps"]) > 1 else 1, "why": why, "idea": task.get("idea", ""),
-            "before": board.fen(), "best_san": board.san(best),
+            "before": board.fen(), "best_san": board.san(best), "your_line": tasks.steps_of(board, [mv, *pv[:6]]),
             "your": {"from": mv.uci()[:2], "to": mv.uci()[2:4], "san": board.san(mv)}}
 
 

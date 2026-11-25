@@ -250,12 +250,20 @@ details.rules p { margin: 8px 0 0; }
 .explain .ex-kind { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--bad-soft); color: var(--bad);
   font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
 .explain h3 { margin: 8px 0 6px; font: 700 17px/1.25 var(--font-body); }
-.explain .ex-best { margin: 0 0 8px; font-weight: 600; }
-.explain .ex-best b { color: var(--good); }
-.explain .ex-rest { color: var(--muted); font-weight: 400; }
+.explain .ex-line { margin: 0 0 8px; line-height: 2; }
+.explain .exname { border: 0; background: none; padding: 0 4px 0 0; font-weight: 700; cursor: pointer; }
+.explain .exname.good { color: var(--good); }
+.explain .exname.bad { color: var(--bad); }
+.explain .exmv { border: 0; border-radius: 6px; padding: 2px 6px; background: var(--surface-2); font-weight: 600;
+  cursor: pointer; white-space: nowrap; }
+.explain .exmv.he { font-weight: 400; color: var(--muted); }
+.explain .exmv.on { background: var(--accent-soft); color: var(--ink); }
+.explain .ex-nav { display: flex; align-items: center; gap: 6px; margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.explain .exstep { width: 40px; height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
+  font-size: 20px; line-height: 1; cursor: pointer; }
 .explain p { margin: 0 0 10px; }
 .explain .ex-why { padding-top: 10px; border-top: 1px solid var(--line); }
-.explain .ex-why b { color: var(--bad); }
+
 /* a tall window: the moves under the board, in lines like a scoresheet — «12. ♘f3 ♗e7  13. …» */
 .app.playing.moves-below .layout { grid-template-columns: auto; grid-template-rows: auto auto; align-content: start; gap: 14px; }
 .moves-below .moves { justify-self: center; }

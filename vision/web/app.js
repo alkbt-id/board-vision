@@ -865,30 +865,80 @@ function afterMove(v, mv, drawn, capture) {
   review();
   syncMode();
 }
-// a task's review (your move was not right): on the position before your move — your move grey with ✕, the solution
-// numbered (blue yours, red his); beside the board the kind, the idea and why your move is worse; «Дальше» plays
-// your move and the turn goes on
+// a task's review (your move was not right): on the position before your move — your move grey with ✕, his answer to
+// it red with «!», the solution numbered (blue yours, red his); beside the board the kind, the idea and why your move is
+// worse, and both lines as moves: a tap on a move (or ← →) shows its position on the board, the line's name the start
+// again; «Дальше» plays your move and the turn goes on
 function showDecision(dec, then) {
   S.phase = "review";
   wrap.classList.add("locked");
-  const yours = marked({ orig: dec.your.from, dest: dec.your.to, brush: "grey" }, "extra");
-  S.reviewShapes = [yours];
-  cg.setShapes([yours]);
-  cg.setAutoShapes(lineShapes((dec.line || []).slice(0, dec.draw ?? 99)));
+  S.dec = dec;
+  S.decLast = cg.state.lastMove; // his last move, lit again when the review goes back to its start
+  S.exNav = { line: "best", i: -1 };
   showExplain(dec);
-  S.review = { kind: "fail", text: `${dec.name}: верно ${dec.best_san}`, label: "Дальше", onNext: () => { log("next_click", { ms: ms(), to: "move", how: "button" }); then(); } };
+  exGo("best", -1);
+  S.review = { kind: "fail", text: `${dec.name} — надо было ${dec.best_san}`, label: "Дальше", onNext: () => { log("next_click", { ms: ms(), to: "move", how: "button" }); S.dec = null; then(); } };
   syncMode();
+}
+// the start of the review: the position before your move with the arrows
+function decisionShapes(dec) {
+  const yours = marked({ orig: dec.your.from, dest: dec.your.to, brush: "grey" }, "extra");
+  const reply = (dec.your_line || [])[1];
+  const his = reply ? [motifMark({ orig: reply.from, dest: reply.to, brush: "red" }, reply.san.includes("#") ? "мат" : reply.san.includes("+") ? "шах" : "")] : [];
+  return { user: [yours], auto: [...his, ...lineShapes((dec.line || []).slice(0, dec.draw ?? 99))] };
+}
+// show move `i` of a line ("best" — the solution, "yours" — your move and his answers) on the board; -1: the start
+function exGo(line, i) {
+  const dec = S.dec;
+  if (!dec) return;
+  const L = line === "yours" ? dec.your_line || [] : dec.line || [];
+  i = Math.max(-1, Math.min(i, L.length - 1));
+  S.exNav = { line, i };
+  if (i < 0) {
+    const sh = decisionShapes(dec);
+    cg.set({ fen: dec.before, lastMove: S.decLast, check: false });
+    S.reviewShapes = sh.user;
+    cg.setShapes(sh.user);
+    cg.setAutoShapes(sh.auto);
+  } else {
+    const st = L[i];
+    cg.set({ fen: st.fen, lastMove: [st.from, st.to], check: /[+#]/.test(st.san) });
+    S.reviewShapes = [];
+    cg.setShapes([]);
+    cg.setAutoShapes([]);
+    play(st.capture ? "Capture" : "Move");
+  }
+  for (const b of document.querySelectorAll("#explain .exmv")) {
+    b.classList.toggle("on", b.dataset.line === line && +b.dataset.i === i);
+  }
+}
+function exStep(d) {
+  const n = S.exNav || { line: "best", i: -1 };
+  exGo(n.line, n.i + d);
+}
+function movesHTML(line, L) {
+  return L.map((st, i) => `<button class="exmv ${st.who}" data-line="${line}" data-i="${i}">${figurine(st.san)}</button>`).join(" ");
 }
 function showExplain(dec) {
   const el = $("#explain");
   if (!el) return;
-  const all = (dec.line || []).map((st) => figurine(st.san)), n = dec.draw ?? all.length;
-  const rest = all.slice(n).join(" ");
+  const yours = dec.your_line || [];
   el.innerHTML = `<span class="ex-kind">${esc(dec.name)}</span>
     ${dec.title ? `<h3>${esc(dec.title)}</h3>` : ""}
-    <p class="ex-best">Верно: <b>${all.slice(0, n).join(" ") || figurine(dec.best_san)}</b>${rest ? ` <span class="ex-rest">дальше ${rest}</span>` : ""}</p>
+    <p class="ex-line"><button class="exname good" data-line="best">Надо было:</button> ${movesHTML("best", dec.line || [])}</p>
     ${dec.idea ? `<p>${esc(dec.idea)}</p>` : ""}
-    <p class="ex-why"><b>Твой ход ${figurine(dec.your.san)}.</b> ${esc(dec.why || "")}</p>`;
+    <div class="ex-why">
+      <p class="ex-line"><button class="exname bad" data-line="yours">Твой ход:</button> ${movesHTML("yours", yours)}</p>
+      <p>${esc(dec.why || "")}</p>
+    </div>
+    <p class="ex-nav"><button class="exstep" data-d="-1" aria-label="Ход назад">‹</button><button class="exstep" data-d="1" aria-label="Ход вперёд">›</button><span>ходы можно пройти на доске: нажми на ход или ← →</span></p>`;
+  el.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.classList.contains("exmv")) exGo(b.dataset.line, +b.dataset.i);
+    else if (b.classList.contains("exname")) exGo(b.dataset.line, -1);
+    else if (b.classList.contains("exstep")) exStep(+b.dataset.d);
+  };
   el.hidden = false;
   $("#moves").classList.add("explaining");
   el.scrollTop = 0;
@@ -1069,6 +1119,11 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && S.dec && S.phase === "review") {
+    e.preventDefault();
+    exStep(e.key === "ArrowRight" ? 1 : -1);
+    return;
+  }
   if (e.key === "Enter" || e.key === " ") {
     if (e.target instanceof HTMLButtonElement && e.target !== bm.btn) return; // a focused button does its own thing
     const b = $(".app").classList.contains("playing") ? (bm.btn.hidden || bm.btn.disabled ? null : bm.btn)

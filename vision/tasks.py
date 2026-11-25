@@ -132,11 +132,8 @@ def grade(task: dict, step: int, board: chess.Board, move: chess.Move, loss=None
 
 
 def line_from(task: dict, step: int, board: chess.Board) -> list[dict]:
-    """The rest of the solution from `step` on (`board`: that step's position), for the board: [{from, to, san, who}]
-    — your moves and his replies, numbered on the board; a one-step task shows its engine line (`pv`) after the
-    move too, at most 4 half-moves."""
-    out = []
-    b = board.copy(stack=False)
+    """The rest of the solution from `step` on (`board`: that step's position), as `steps_of` gives it — your moves
+    and his replies; a one-step task gives its engine line (`pv`) after the move too, at most 4 half-moves."""
     moves: list[str] = []
     for st in task["steps"][step:]:
         moves.append(st["best"])
@@ -144,13 +141,23 @@ def line_from(task: dict, step: int, board: chess.Board) -> list[dict]:
             moves.append(st["reply"])
     if len(task["steps"]) == 1 and task.get("pv"):
         moves = task["pv"][:4]
+    return steps_of(board, [chess.Move.from_uci(u) for u in moves])
+
+
+def steps_of(board: chess.Board, moves: list[chess.Move]) -> list[dict]:
+    """A line for the board, as far as its moves are legal: [{from, to, san, who: "you" | "he" (the side to move in
+    `board` is "you"), fen: the position after the move, capture}] — numbered arrows, and moves to step through."""
+    out = []
+    b = board.copy(stack=False)
     me = b.turn
-    for u in moves:
-        m = chess.Move.from_uci(u)
+    for m in moves:
         if m not in b.legal_moves:
             break
-        out.append({"from": u[:2], "to": u[2:4], "san": b.san(m), "who": "you" if b.turn == me else "he"})
+        u = m.uci()
+        out.append({"from": u[:2], "to": u[2:4], "san": b.san(m), "who": "you" if b.turn == me else "he",
+                    "capture": b.is_capture(m)})
         b.push(m)
+        out[-1]["fen"] = b.fen()
     return out
 
 
