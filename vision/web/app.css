@@ -274,15 +274,19 @@ details.rules p { margin: 8px 0 0; }
 .fig.B { background-image: url(vendor/fig/B.svg); }
 .fig.N { background-image: url(vendor/fig/N.svg); }
 
-/* a tall window, the start screen: the rating and the charts under the board */
+/* a tall window, the start screen under the board, across its whole width: a line with the button, the series length
+   and the rules; under it the three charts side by side, as tall as each other */
 .app.side-below .layout { grid-template-columns: auto; grid-template-rows: auto auto; justify-content: center;
   align-content: start; gap: 14px; overflow-y: auto; }
 .app.side-below .side { justify-self: center; }
-.app.side-below .side-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 14px 28px;
-  align-content: start; }
+.app.side-below .side-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
 .start-charts, .start-actions { display: grid; gap: 14px; align-content: start; }
-.app.side-below .start-actions { grid-column: 1; grid-row: 1; }
-.app.side-below .start-charts { grid-column: 2; grid-row: 1; }
+.app.side-below .start-actions { grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; }
+.app.side-below .start-actions #go { flex: 0 1 36%; min-width: 200px; }
+.app.side-below .start-actions #level { margin: 0; }
+.app.side-below .start-actions details.rules { margin-left: auto; }
+.app.side-below .start-actions details.rules[open] { flex-basis: 100%; margin-left: 0; }
+.app.side-below .start-charts { grid-row: 2; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 24px; }
 
 /* ---------- the frame around the board, as on a real board: the frame in the dark square's colour, a thin line of the
    light square's colour between it and the squares, the coordinates in the middle of the frame on all sides */

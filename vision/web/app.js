@@ -485,7 +485,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 // The panel beside the board goes where the board stays biggest: on the right of a wide window, under it in a tall
 // one — the moves while you play, the rating and the charts on the start screen.
 const MOVES_H = 132; // the moves under the board: about four lines
-const PANEL_H = 360; // the start screen's panel under the board
+const PANEL_H = 290; // the start screen's panel under the board: the button's line, three charts in a row
 function layout() {
   const app = $(".app"), playing = app.classList.contains("playing");
   const top = $(".top").getBoundingClientRect().height;
@@ -499,7 +499,7 @@ function layout() {
     below = under > right;
     size = below ? under : right;
   } else {
-    // under the board the panel lays its content out in two columns (rating and button | charts): PANEL_H is enough
+    // under the board the panel runs across the board's width (the button's line, the three charts in a row)
     const sideW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--side-w"));
     const right = fit(H, W - sideW - 14), under = fit(H - PANEL_H - 14, W);
     below = under > right;
@@ -633,7 +633,8 @@ function drawCharts() {
   lineChart(c1, pts, { key: "rating", height: 150, title: "Внимание по позициям", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
   drawDecisions();
   const tp = pts.filter((p) => p.median_s != null);
-  if (c2 && tp.length > 1) lineChart(c2, tp, { key: "median_s", height: 80, title: "Секунд на позицию", fmt: (v) => String(Math.round(v)), minSpan: 6, step: 2, floor: 0 });
+  const tall = $(".app").classList.contains("side-below"); // under the board: three charts in a row, all as tall
+  if (c2 && tp.length > 1) lineChart(c2, tp, { key: "median_s", height: tall ? 150 : 80, title: "Секунд на позицию", fmt: (v) => String(Math.round(v)), minSpan: 6, step: 2, floor: 0 });
 }
 function drawDecisions() {
   const el = $("#ch-dec");
@@ -641,7 +642,9 @@ function drawDecisions() {
   // from the starting rating on: a chart from the very first task (before it, the start alone)
   const d = progress?.decisions, pts = d?.points || [];
   const dp = [{ ts: pts.length ? pts[0].ts - 1 : Date.now(), rating: d?.start ?? 1300 }, ...pts];
-  lineChart(el, dp, { key: "rating", height: 110, title: "Решения по задачам", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
+  // under the board it stands beside the attention chart: as tall as it
+  const tall = $(".app").classList.contains("side-below");
+  lineChart(el, dp, { key: "rating", height: tall ? 150 : 110, title: "Решения по задачам", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
 }
 async function loadProgress() {
   try { progress = await api("/api/progress"); } catch { progress = null; }
