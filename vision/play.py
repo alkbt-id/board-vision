@@ -260,6 +260,7 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
         row = store.q("SELECT id FROM items WHERE key = ?", (f"series|{p['last']['fen']}|{p['last']['move']}",))
         item_id = row[0]["id"] if row else None
     p["turn_item"] = item_id  # a miss after your move brings this position back as a repeat (vision/play.commit)
+    p["prior"] = threats.found_before(key, result)  # what was found right here counts after the move while unchanged
     if item_id is not None:
         store.record(item_id, pid, ms, result["n"], result, arrows, series=p["series_no"])
         if key.get("engine"):  # the position now carries its tactics (for its difficulty and its next showing)
@@ -379,7 +380,8 @@ def _lost_review(before: chess.Board, mv: chess.Move, reply: chess.Move | None =
 
 
 def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
-    """The user's own move with his arrows of what the opponent can do after it: checked, then played."""
+    """The user's own move with his arrows of what the opponent can do after it: checked, then played. What step 1
+    found right and the move left as it was counts as found (threats.check_own's `prior`)."""
     p = PLAYS[pid]
     if p["phase"] != "plan":
         raise ValueError("сейчас не твой ход")
@@ -408,7 +410,7 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
             item = threats.reply_item(board, reply, loss, taken)  # a tactic the capture rule does not see
             item["line"] = threats.recapture_line(board, reply, engine.best_move)  # a «fair» trade that is not
             key["attacks"].append(item)
-    result = threats.check_own(key, arrows, board)
+    result = threats.check_own(key, arrows, board, prior=p.pop("prior", None))
     if board.is_checkmate() or (not board.is_game_over() and (engine.evaluate(board, p["user"]) or 0) >= MATE_RELAX):
         # a move of your forced mate: the marks after it are not checked (missed ones are no mistake)
         result = {**result, "missed": [], "extra": [], "ok": True, "mate_line": True}

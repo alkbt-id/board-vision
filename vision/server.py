@@ -5,7 +5,8 @@
   GET  /api/state     the pool of positions, the download job, today's results
   POST /api/play/start                          a sitting (vision/play.py) -> the first series' first check
   POST /api/play/answer {play, arrows, ms}      -> the review (and what comes next: your move or the next series)
-  POST /api/play/commit {play, move, arrows, ms} your move with what he can do after it -> its check
+  POST /api/play/commit {play, move, arrows, ms} your move with what he can do after it -> its check (what step 1
+                                                found right and the move left as it was counts after it too)
   POST /api/play/next   {play}                  the bot's answer, or the next series, or the sitting's summary
   POST /api/play/leave  {play}                  end the sitting early (back to the start screen)
   POST /api/log       an event from the window (vision/events.py lists the kinds)

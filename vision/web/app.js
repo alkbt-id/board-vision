@@ -102,6 +102,8 @@ const isMoveArrow = (from, to) => S.phase === "draw" && from !== to && mine(from
 const toShapes = (list) => [
   // steps 2–3 keep your circles of step 1 on the board, pale
   ...(S.phase === "plan" && S.step1 ? S.step1.marks.filter(isCircle).map((a) => ({ orig: a.from, brush: "paleChance" })) : []),
+  // …and its threat arrows, pale: what you marked before your move counts after it while it stays the same
+  ...(S.phase === "plan" && myMove && S.step1 ? S.step1.marks.filter((a) => !isCircle(a)).map((a) => ({ orig: a.from, dest: a.to, brush: "paleOrange" })) : []),
   ...(myMove ? [{ orig: myMove.from, dest: myMove.to, brush: "blue" }] : []),
   ...list.map((a) => (isCircle(a) ? { orig: a.from, brush: "chance" } : { orig: a.from, dest: a.to, brush: "orange" }))];
 // your move drawn in the marking step: a legal one ends the marking, anything else is not a move
@@ -1026,7 +1028,8 @@ async function check(move = null) {
     if (move) tryMove(move.from, move.to, `${move.how}-early`);
     return;
   }
-  const toPlan = (how) => { log("next_click", { ms: ms(), to: "plan", how }); startPlan(a, []); };
+  const right = marks.filter((m) => !a.result.extra.some((x) => x.from === m.from && x.to === m.to));
+  const toPlan = (how) => { log("next_click", { ms: ms(), to: "plan", how }); startPlan(a, []); S.step1 = { marks: right }; };
   showReview(r, () => toPlan("button"));
   S.review.toPlan = toPlan;
 }

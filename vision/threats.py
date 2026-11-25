@@ -514,6 +514,20 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
 
 # ---------- the check of the user's own move («проверь свой ход») ----------
 
+def found_before(key: dict, result: dict) -> dict:
+    """What step 1 found right, for `check_own`'s `prior`: {"takes": {square: [his attackers]}, "checks": [moves]}."""
+    found = set(result.get("found") or [])
+    takes, checks = {}, []
+    for t in key.get("threats") or []:
+        if t["target"] not in found:
+            continue
+        if t.get("kind") == "check":
+            checks.append(t["best"])
+        elif not t.get("tactic"):
+            takes[t["target"]] = list(t["attackers"])
+    return {"takes": takes, "checks": checks}
+
+
 def own_move(before: chess.Board, move: chess.Move, with_checks: bool = True) -> dict:
     """What the opponent can win at once after the user's `move` in `before` (the user to move there): take, mate,
     queen a pawn — as in `analyse`, with "attacks": [] for the tactical replies vision/engine.py adds (a fork, a
@@ -675,13 +689,27 @@ def describe_attack(a: dict, board: chess.Board) -> str:
     return f"{san} — выигрывает материал"
 
 
-def check_own(key: dict, arrows: list[dict], board: chess.Board, with_checks: bool = True) -> dict:
+def check_own(key: dict, arrows: list[dict], board: chess.Board, with_checks: bool = True,
+              prior: dict | None = None) -> dict:
     """The user's arrows after his own move against `own_move`'s key (`board`: the position after his move).
     An arrow finds a «take» threat as in `check` — every item it fits, so one arrow can find a capture and the check
     it gives —, and an attack when it is the opponent's move itself, or goes from the square where his piece lands to
-    its target. Without `with_checks` (answers given before every check was asked for) the check items are left out."""
+    its target. Without `with_checks` (answers given before every check was asked for) the check items are left out.
+    `prior`: what the user found right in step 1, before his move (`found_before`): a threat still the same after the
+    move — a take on the same square by the same piece, the same check — is found here too ("carried"; 2026-11-25:
+    Kxh5 marked before …Kd3 was counted as missed after it)."""
     items_in = [t for t in key["threats"] if with_checks or t.get("kind") != "check"]
     found, found_a, extra = set(), set(), []
+    carried = set()
+    if prior:
+        takes, checks = prior.get("takes") or {}, set(prior.get("checks") or [])
+        for t in items_in:
+            if t.get("kind") == "check":
+                if t["best"] in checks:
+                    carried.add(t["target"])
+            elif not t.get("tactic") and set(t["attackers"]) & set(takes.get(t["target"]) or []):
+                carried.add(t["target"])
+    found |= carried
     for arrow in arrows:
         a, b = arrow.get("from"), arrow.get("to")
         hits = [t["target"] for t in items_in for frm, to in ((a, b), (b, a))
@@ -717,4 +745,5 @@ def check_own(key: dict, arrows: list[dict], board: chess.Board, with_checks: bo
         e = explain_extra(x, key, board) if x["why"] == "defended" else {"text": f"{x['from']}→{x['to']}: этого он не сможет", "detail": ""}
         extras.append(e)
     return {"found": sorted(found | found_a), "missed": missed + missed_a, "extra": extra, "checks": with_checks,
-            "ok": not missed and not missed_a and not extra, "items": items, "extras": extras}
+            "carried": sorted(carried), "ok": not missed and not missed_a and not extra, "items": items,
+            "extras": extras}
