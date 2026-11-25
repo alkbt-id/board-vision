@@ -16,6 +16,7 @@
 """
 
 import contextlib
+import os
 import threading
 import time
 from pathlib import Path
@@ -146,6 +147,8 @@ async def lifespan(_app):
         store.meta_set("last_refresh", str(int(time.time() * 1000)))
 
     def background() -> None:
+        if os.environ.get("BV_OFFLINE"):  # the window's tests: no downloads, no task preparation, no Claude
+            return
         migrate.run()  # a changed threat rule: positions and past answers first
         migrate.sources_v2()  # puzzles from the solver's side, real misses that could be parried (once)
         migrate.sources_v3()  # other people's games from move 9 on (once)

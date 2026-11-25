@@ -17,7 +17,7 @@ at your Lichess rapid rating.
 - Data: `~/Library/Application Support/BoardVision/` (`vision/config.py`).
 - Event log, live: `uv run python -m vision.watch` (`vision/events.py` lists the events).
 - Test server: `uv run python -m vision --home <scratch folder> --port 8748`.
-- Tests: `uv run pytest`.
+- Tests: `uv run pytest` (rule, series, real positions with Stockfish); the window in Chrome: `uv run pytest -m browser`.
 - Sounds (non-free, not in git): `scripts/fetch_sounds.sh`.
 
 Data used: Lichess puzzles and games (CC0, database.lichess.org), the Lichess tablebase API, Maia nets (CSSLab, GPL-3.0,

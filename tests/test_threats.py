@@ -44,7 +44,7 @@ def test_battery_wins_a_knight_a_single_rook_does_not():
     assert battery["e5"]["gain"] == 3
     single = threats.analyse(chess.Board("4r1k1/8/8/4n3/8/8/4R3/6K1 b - - 0 1"))
     assert single is not None
-    assert single["threats"] == []
+    assert [t for t in single["threats"] if t.get("kind") != "check"] == []  # Rg2+ is his check (rule 8), no capture
     assert single["defended"] == ["e5"]
 
 
@@ -196,12 +196,14 @@ def test_threat_and_chance_on_the_same_line_go_by_the_arrow_direction():
     # rooks a1 and a5 face each other, neither defended: he can take a1 (threat), you can take a5 (chance)
     after = chess.Board("4k3/8/8/r7/8/8/8/R3K3 w - - 0 1")
     answer = threats.analyse(after)
-    threat = threats.check(answer, [{"from": "a5", "to": "a1"}], after)
-    assert threat["found"] == ["a1"] and threat["missed"] == ["a5"]
-    chance = threats.check(answer, [{"from": "a1", "to": "a5"}], after)
-    assert chance["found"] == ["a5"] and chance["missed"] == ["a1"]
-    both = threats.check(answer, [{"from": "a5", "to": "a1"}, {"from": "a1", "to": "a5"}], after)
-    assert both["ok"] and both["n"] == 2
+    # (his Re5+ is a mark too since rule 8: drawn in every answer here, it is not what this test is about)
+    check = {"from": "a5", "to": "e5"}
+    threat = threats.check(answer, [{"from": "a5", "to": "a1"}, check], after)
+    assert "a1" in threat["found"] and threat["missed"] == ["a5"]
+    chance = threats.check(answer, [{"from": "a1", "to": "a5"}, check], after)
+    assert "a5" in chance["found"] and chance["missed"] == ["a1"]
+    both = threats.check(answer, [{"from": "a5", "to": "a1"}, {"from": "a1", "to": "a5"}, check], after)
+    assert both["ok"] and both["n"] == 3
 
 
 def test_your_move_drawn_at_once_takes_a_chance():
@@ -249,10 +251,12 @@ def test_his_check_that_forks_is_a_threat():
     t = [t for t in key["threats"] if t.get("tactic")]
     assert len(t) == 1 and t[0]["tactic"] == "check" and t[0]["attackers"] == ["b5"]
     assert set(t[0]["targets"]) >= {"c7", "a8", "e8"}
-    assert threats.check(key, [{"from": "b5", "to": "c7"}], after)["ok"]  # the arrow of his check
-    assert threats.check(key, [{"from": "b5", "to": "a8"}], after)["ok"]  # or of what it wins
+    nd6 = {"from": "b5", "to": "d6"}  # his other check, Nd6+: a mark too since rule 8
+    assert threats.check(key, [{"from": "b5", "to": "c7"}, nd6], after)["ok"]  # the arrow of his check
+    assert threats.check(key, [{"from": "b5", "to": "a8"}, nd6], after)["ok"]  # or of what it wins
+    assert threats.check(key, [{"from": "b5", "to": "c7"}], after)["missed"] == ["b5d6"]
     assert not threats.check(key, [], after)["ok"]
-    assert threats.check(key, [], after, with_tactics=False)["ok"]  # an answer from before tactics
+    assert threats.check(key, [], after, with_tactics=False, with_checks=False)["ok"]  # an answer from before both
 
 
 def test_your_forced_mate_is_a_chance_found_by_a_circle_on_his_king_or_by_playing_it():

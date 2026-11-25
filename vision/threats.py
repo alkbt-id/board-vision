@@ -193,6 +193,9 @@ def analyse(after: chess.Board) -> dict | None:
     board = after.copy(stack=False)
     board.push(chess.Move.null())
     key = opponent_key(board)
+    # judged as after your move (the user, 2026-11-25): every check of his is a mark too, one that just loses the
+    # checking piece optional (rule 8)
+    key["threats"] += check_items(board, key["threats"])
     key["chances"] = opponent_key(after.copy(stack=False))["threats"]
     return key
 
@@ -274,14 +277,22 @@ def add_tactics(key: dict, after: chess.Board, forcing) -> dict:
     move handed to him, to "threats"; the user's to "chances". key["engine"] is True when the engine answered."""
     him = after.copy(stack=False)
     him.push(chess.Move.null())
-    # the user's quiet winning moves too (a fork, a pin): a Lichess puzzle's blow often is one
-    his, mine = forcing(chess.Board(him.fen())), forcing(after.copy(stack=False), quiet=True)
+    # quiet winning moves too (a fork, a pin), his as after your move (rule 8) and yours (a Lichess puzzle's blow often
+    # is one)
+    his, mine = forcing(chess.Board(him.fen()), quiet=True), forcing(after.copy(stack=False), quiet=True)
     if his is None or mine is None:
         return key
-    key["threats"] = key["threats"] + tactic_items(chess.Board(him.fen()), his, key["threats"], "he")
+    key["threats"] = merge_tactics(key["threats"], tactic_items(chess.Board(him.fen()), his, key["threats"], "he"))
     key["chances"] = (key.get("chances") or []) + tactic_items(after, mine, key.get("chances") or [], "you")
     key["engine"] = True
     return key
+
+
+def merge_tactics(known: list[dict], new: list[dict]) -> list[dict]:
+    """`known` items plus the engine's `new` ones; a plain check item whose move is a tactic's first move (a check that
+    forks and wins) gives way to the tactic: it has the line and what it wins, so an arrow to the won piece finds it."""
+    firsts = {t["best"] for t in new}
+    return [t for t in known if not (t.get("kind") == "check" and t["best"] in firsts)] + new
 
 
 def tactic_items(board: chess.Board, lines: list[dict], known: list[dict], who: str) -> list[dict]:
@@ -290,7 +301,7 @@ def tactic_items(board: chess.Board, lines: list[dict], known: list[dict], who: 
     the king when it checks, "attackers": [its piece], "tactic": "mate" | "check", "mate_in", "line": the moves
     numbered as `recapture_line` does, "wins": what the line takes}. `who` moves first: "he" or "you"."""
     other = {"he": "you", "you": "he"}[who]
-    seen = {t["best"] for t in known}
+    seen = {t["best"] for t in known if t.get("kind") != "check"}  # a plain check gives way (merge_tactics)
     known_targets = {sq for t in known for sq in (t.get("targets") or [t["target"]])}
     out = []
     for ln in lines:
@@ -405,8 +416,14 @@ def _battery(items: list[dict], a: str | None, b: str | None) -> dict | None:
     return None
 
 
+def required(answer: dict) -> int:
+    """His threats to be marked (an optional one — a suicidal check, taking back after your fair capture — is not)."""
+    return sum(1 for t in answer.get("threats") or [] if not t.get("optional"))
+
+
 def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bool = True,
-          played: dict | None = None, with_tactics: bool = True, with_threats: bool = True) -> dict:
+          played: dict | None = None, with_tactics: bool = True, with_threats: bool = True,
+          with_checks: bool = True) -> dict:
     """Compare the user's arrows ({"from": "d8", "to": "d4"}) with the answer key: his threats and, with
     `with_chances` (answers given before 2026-11-24 were not asked for them), the user's own chances.
 
@@ -414,6 +431,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
      "ok": bool, "n": threats + chances asked, "chances": with_chances, "tactics": with_tactics (answers given before
      the engine's tactics were asked for are checked without them), "threats_asked": with_threats (since 2026-11-24
      the user marks only his chances here: his threats are checked after the user's own move, vision/play.commit),
+     "checks": with_checks (his checks are marks in step 1 since rule 8; older answers are checked without them),
      "items": [{"target", "found", "text", "detail"}], "extras": [{"text", "detail"}]}
     `played`: the user's own move ({"from", "to"}), drawn instead of finishing the marking: a chance it takes is
     found (he plays it), and it is never an extra arrow.
@@ -424,6 +442,8 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
     keys = [*(answer["threats"] if with_threats else []), *((answer.get("chances") or []) if with_chances else [])]
     if not with_tactics:
         keys = [t for t in keys if not t.get("tactic")]
+    if not with_checks:
+        keys = [t for t in keys if t.get("kind") != "check"]
     chances = [t for t in (answer.get("chances") or []) if with_tactics or not t.get("tactic")]
     by_square: dict[str, list[dict]] = {}
     for t in keys:
@@ -469,7 +489,7 @@ def check(answer: dict, arrows: list[dict], after: chess.Board, with_chances: bo
               "detail": "" if t["mate"] else swap_text(t.get("exchange"))} for t in keys]
     return {"found": sorted(found), "missed": missed, "extra": extra, "ok": not missed and not extra,
             "n": sum(1 for t in keys if not t.get("optional")), "chances": with_chances, "tactics": with_tactics,
-            "threats_asked": with_threats,
+            "threats_asked": with_threats, "checks": with_checks,
             "items": items, "extras": [explain_extra(x, answer, after) for x in extra]}
 
 

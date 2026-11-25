@@ -1,6 +1,7 @@
 """Where the user's data lives and the settings that differ between people.
 
-Data folder ~/Library/Application Support/BoardVision (BV_HOME moves it, e.g. for a test server):
+Data folder ~/Library/Application Support/BoardVision (BV_HOME moves it, e.g. for a test server; BV_OFFLINE=1 makes
+the server start without downloads, task preparation or Claude — the window's tests, tests/browser):
   config.toml    settings; made on the first start from «Шахматный тренер»'s settings (the same nicks)
   vision.db      positions, answers, repeats (vision/store.py)
   events.jsonl   every action of the user and the app, one JSON per line (vision/events.py)

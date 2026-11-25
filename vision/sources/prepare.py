@@ -158,6 +158,9 @@ def _single(board: chess.Board, kind: str, n: int = 8) -> tuple[dict, list[dict]
 
 
 def make_threat(item: dict) -> dict:
+    answer = item["answer"] if isinstance(item["answer"], dict) else json.loads(item["answer"])
+    if not any(t.get("kind") != "check" and not t.get("optional") for t in answer.get("threats") or []):
+        raise Reject("только шах: это не угроза для задачи")
     board = _board(item)
     step, mp = _single(board, "threat")
     if mp[0]["cp"] < -300:

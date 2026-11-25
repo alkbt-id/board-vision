@@ -100,7 +100,8 @@ def add_item(source: str, fen: str, move: str, side: str, answer: dict, ref: str
         cur = db().execute(
             "INSERT OR IGNORE INTO items (key, source, ref, ply, fen, move, side, answer, n_threats, motif, rating, added)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (key, source, ref, ply, fen, move, side, json.dumps(answer, ensure_ascii=False), len(answer["threats"]),
+            (key, source, ref, ply, fen, move, side, json.dumps(answer, ensure_ascii=False),
+             sum(1 for t in answer["threats"] if not t.get("optional")),  # the marks to make
              motif or None, rating, now_ms()))
         return cur.rowcount > 0
 

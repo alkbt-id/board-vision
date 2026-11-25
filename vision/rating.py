@@ -62,7 +62,8 @@ def features(fen: str, move_uci: str, answer: dict) -> dict[str, float]:
     opp = before.turn  # the side that makes the move, i.e. the opponent
     after = before.copy(stack=False)
     after.push(move)
-    found = [t for t in answer["threats"] if not t.get("tactic")]  # the engine's: `with_chances`, per answer
+    # the engine's (`with_chances`, per answer) and his checks (rule 8, `with_chances` too) are not counted here
+    found = [t for t in answer["threats"] if not t.get("tactic") and t.get("kind") != "check"]
     if not found:
         return {"decoys": float(min(2, len(answer["defended"])))}
     f: dict[str, float] = {"threat": 1.0, "more": float(len(found) - 1)}
@@ -127,9 +128,16 @@ def with_chances(f: dict[str, float], answer_json: str, result_json: str | None)
     tactics = bool(result.get("tactics"))
     chances = [t for t in answer.get("chances") or [] if tactics or not t.get("tactic")] if result.get("chances") else []
     his = [t for t in answer.get("threats") or [] if t.get("tactic")] if tactics else []
-    if not chances and not his:
+    checks = sum(1 for t in answer.get("threats") or [] if t.get("kind") == "check" and not t.get("optional")) \
+        if result.get("checks") else 0  # his checks, marks in step 1 since rule 8
+    if not chances and not his and not checks:
         return f
     f = dict(f)
+    if checks:
+        f.pop("decoys", None)
+        f["checks"] = float(min(3, checks))
+        if not chances and not his:
+            return f
     f.pop("decoys", None)  # a position with something to find is not a quiet one
     if chances:
         f["chance"] = 1.0
@@ -191,7 +199,7 @@ def difficulty(item: dict, weights: dict[str, float]) -> float:
     """How hard a pool position is for a new answer (with chances asked): `item` has id, fen, move, answer, source."""
     f = _item_features(item["id"], item["fen"], item["move"], item["answer"], item["source"])
     if item["source"] != "ownmove":
-        f = with_chances(f, item["answer"], '{"chances": true, "tactics": true}')
+        f = with_chances(f, item["answer"], '{"chances": true, "tactics": true, "checks": true}')
     return BASE + sum(weights.get(k, 0) * v for k, v in f.items())
 
 

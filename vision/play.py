@@ -256,7 +256,7 @@ def answer(pid: str, arrows: list[dict], ms: int, move: str = "") -> dict:
         store.record(item_id, pid, ms, result["n"], result, arrows, series=p["series_no"])
         if key.get("engine"):  # the position now carries its tactics (for its difficulty and its next showing)
             store.run("UPDATE items SET answer=?, n_threats=? WHERE id=?",
-                      (json.dumps(key, ensure_ascii=False), len(key["threats"]), item_id))
+                      (json.dumps(key, ensure_ascii=False), threats.required(key), item_id))
     sr = p["series"]
     p["checks"] += 1
     sr["misses"] += not result["ok"]
@@ -361,7 +361,7 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
     # is the best there is
     lines = engine.forcing(board, credit=took, quiet=True)  # what you have just taken is not his to «win» back
     if lines:
-        key["threats"] += threats.tactic_items(board, lines, key["threats"], "he")
+        key["threats"] = threats.merge_tactics(key["threats"], threats.tactic_items(board, lines, key["threats"], "he"))
     if ref:
         reply, loss = ref
         taken = {t["target"] for t in key["threats"]} | {t["best"] for t in key["threats"] if t.get("tactic")}

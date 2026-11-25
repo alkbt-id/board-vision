@@ -16,6 +16,10 @@ History:
      on d3 the arrows of his taking back are wanted, not wrong)
   7  a capture that opens a line onto a piece of the capturing side counts what it loses there (Bh3xg2 opening the
      h-file to Rh1xh6 was marked as a missed threat)
+  8  step 1 is judged as after your move (2026-11-25, a real check Bb5+ drawn in step 1 was marked as an extra arrow):
+     every check of his is a mark (one that just loses the checking piece optional), his quiet forks and pins that
+     win (the engine's) too. Answers given before were not asked for checks: checked without them (their stored
+     result has no "checks": true). n_threats counts only the marks to make (not the optional ones)
 The engine's tactics (forced mates in 2–3, winning checks: threats.add_tactics) are not the rule's: a position keeps
 the ones it has when its key is computed again, and an answer is checked with them only if it was asked for them
 (its stored result has "tactics": true).
@@ -27,7 +31,7 @@ import chess
 
 from . import events, store, threats
 
-RULE_VERSION = "7"
+RULE_VERSION = "8"
 
 
 def _own_moves() -> int:
@@ -75,7 +79,7 @@ def run() -> None:
             answer["threats"] += [t for t in old.get("threats") or [] if t.get("tactic")]
             answer["chances"] += [t for t in old.get("chances") or [] if t.get("tactic")]
             answer["engine"] = True
-        n = len(answer["threats"])
+        n = threats.required(answer)
         changed += n != row["n_threats"]
         store.run("UPDATE items SET answer=?, n_threats=? WHERE id=?", (json.dumps(answer, ensure_ascii=False), n, row["id"]))
         keys[row["id"]] = (answer, after)
@@ -87,7 +91,8 @@ def run() -> None:
         answer, after = keys[a["item"]]
         stored = json.loads(a["result"] or "{}")
         res = threats.check(answer, json.loads(a["arrows"] or "[]"), after, with_chances=bool(stored.get("chances")),
-                            with_tactics=bool(stored.get("tactics")), with_threats=stored.get("threats_asked", True))
+                            with_tactics=bool(stored.get("tactics")), with_threats=stored.get("threats_asked", True),
+                            with_checks=bool(stored.get("checks")))
         store.run("UPDATE attempts SET n_threats=?, found=?, missed=?, extra=?, ok=?, result=? WHERE id=?",
                   (res["n"], len(res["found"]), len(res["missed"]), len(res["extra"]), int(res["ok"]),
                    json.dumps(res, ensure_ascii=False), a["id"]))

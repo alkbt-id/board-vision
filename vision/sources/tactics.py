@@ -46,9 +46,9 @@ def run(limit: int = PER_RUN) -> None:
         n = sum(1 for t in [*key["threats"], *key["chances"]] if t.get("tactic"))
         before = store.q("SELECT n_threats FROM items WHERE id=?", (r["id"],))[0]["n_threats"]
         store.run("UPDATE items SET answer=?, n_threats=? WHERE id=?",
-                  (json.dumps(key, ensure_ascii=False), len(key["threats"]), r["id"]))
+                  (json.dumps(key, ensure_ascii=False), threats.required(key), r["id"]))
         found += bool(n)
-        became += before == 0 and len(key["threats"]) > 0
+        became += before == 0 and threats.required(key) > 0
         if i % 200 == 0:
             say(f"скрытые угрозы: проверено {i} из {len(rows)}, с матом или шахом {found}")
     say(f"скрытые угрозы: {found} позиций с форсированным матом или выигрывающим шахом, {became} стали позициями с угрозой")
