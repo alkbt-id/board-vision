@@ -1,4 +1,5 @@
-"""The opponent in a series: Maia 1300 — a net that plays like a 1300 Lichess player, not like an engine.
+"""Maia 1300 as the opponent — now only when there is no Stockfish (since 2026-11-25 the opponent in a series is
+Stockfish's best move, vision/play._bot_turn). Maia: a net that plays like a 1300 Lichess player, not like an engine.
 
 Maia (https://maiachess.com, CSSLab, GPL-3.0) gives every legal move the probability that a player of its level
 plays it; the bot picks a move by those probabilities, so it varies, makes human mistakes and punishes human ones.

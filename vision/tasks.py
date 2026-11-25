@@ -19,7 +19,8 @@ line in words (vision/explain.py). The game then goes on from the move made.
 
 Each task has a rating on the scale of game ratings (`rating_of`, from Maia 1100–1900: how often players of each level
 play a right move); the «Решения» rating (`replay`) is an Elo over first tries, started at the user's Lichess rapid
-rating. Tasks are picked a little below it (BELOW), so most are solved.
+rating. Tasks are picked below it (BELOW) and never above it (WINDOW = 0; the user, twice: no tasks beyond my
+strength), so most are solved.
 """
 
 import json
@@ -35,8 +36,8 @@ NAME = {"threat": "Его угроза", "tactic": "Тактика", "quiet": "�
         "strategy": "Стратегия", "endgame": "Эндшпиль"}
 START = 1300  # the «Решения» rating before the first answer, when the Lichess rapid rating is not known
 K = 32
-BELOW = 100  # tasks are picked near the rating minus this: about two of three solved
-WINDOW = 200  # …and never above the rating plus this (the user: no tasks too hard for my level); harder ones wait
+BELOW = 150  # tasks are picked near the rating minus this: about seven of ten solved
+WINDOW = 0  # …and never above the rating plus this (the user: no tasks beyond my strength); harder ones wait
 CANDIDATES = 40
 
 

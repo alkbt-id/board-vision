@@ -5,12 +5,13 @@ a series of length L is a fragment of a game with L turns:
   1. a position from the pool (vision/sources: the user's games, other people's, Lichess puzzles turned around, or
      a position due for a repeat) and the opponent's real move in it — the first check;
   A series with moves (L > 1) starts only where the user's side is not lost with best play (Stockfish, NOT_LOST):
-  traps and hard positions yes, lost ones no. Once started it is played to its length even when it becomes lost —
-  only the marks count, not the game; a mate ends it.
+  traps and hard positions yes, lost ones no. A series ends as soon as the user's side becomes lost (NOT_LOST,
+  after his move or the opponent's) or the game ends — the user (2026-11-25): no lost positions.
   2. if L > 1: the user draws his move as an arrow and, before it is played, the arrows of what the opponent can
      do after it («проверь свой ход»: what he can win at once by the capture rule, vision/threats.own_move, and a
-     tactical reply Stockfish finds when the move loses material to it, vision/engine.py); «Хожу» checks that, plays the move, and the bot (Maia 1300, vision/bot.py)
-     answers; then check again — until L checks of the bot's moves are done or the game ends.
+     tactical reply Stockfish finds when the move loses material to it, vision/engine.py); «Хожу» checks that, plays the move, and the opponent
+     answers — Stockfish's best move (the user's choice, 2026-11-25; Maia 1300 drew moves by chance and once left a
+     rook en prise); then check again — until L checks of the bot's moves are done or the game ends.
 L is the user's level (meta series_length, starts at 1): a series without a miss (in either kind of check) makes it
 one longer (max 30), two missed series in a row make it one shorter (min 1). So at level 1 it is the plain «one position, one move» drill.
 The position of a series: a due repeat in REPEAT_SHARE of series, else a position with a threat or a quiet one by
@@ -168,7 +169,8 @@ def _bot_turn(p: dict) -> dict:
     forced = p.pop("forced_reply", None)
     mv = chess.Move.from_uci(forced) if forced else None
     if mv is None or mv not in board.legal_moves:
-        mv = bot.move(board)  # his move in a task's line is the task's (the best defence), not the bot's
+        # his move in a task's line is the task's; else Stockfish's best (Maia only without Stockfish)
+        mv = engine.best_move(board) or bot.move(board)
     san, capture = board.san(mv), board.is_capture(mv)
     board.push(mv)
     p["last"] = {"fen": before.fen(), "move": mv.uci()}
@@ -178,12 +180,23 @@ def _bot_turn(p: dict) -> dict:
     if board.is_game_over():
         shown["series_end"] = _end_series(p, game_over=True)
         p["phase"] = "next"
+    elif _lost(p):  # no play on in a lost position: the next series
+        shown["series_end"] = _end_series(p, lost=True)
+        p["phase"] = "next"
     elif board.is_check():
         p["phase"] = "plan"  # answer the check (no threat check here: the check is the threat)
         shown["check"] = True
     else:
         p["phase"] = "check"
     return shown
+
+
+def _lost(p: dict) -> bool:
+    """Is the user's side lost now with best play (Stockfish, NOT_LOST)? A task's line is never cut."""
+    if p.get("task"):
+        return False
+    e = engine.evaluate(p["board"], p["user"])
+    return e is not None and e < NOT_LOST
 
 
 def _end_series(p: dict, game_over: bool = False, lost: bool = False) -> dict:
@@ -378,9 +391,10 @@ def commit(pid: str, uci: str, arrows: list[dict], ms: int) -> dict:
                            "san": san, "before": before_fen}}
     if dec is not None:
         extra["decision"] = dec
-    if board.is_game_over() or sr["checks"] >= sr["length"]:  # the last turn of the series: no bot move after it
+    lost = not board.is_game_over() and _lost(p)  # your move lost the game: the series ends here
+    if board.is_game_over() or lost or sr["checks"] >= sr["length"]:  # no move of his after this one
         p["phase"] = "next"
-        extra["series_end"] = _end_series(p, game_over=board.is_game_over())
+        extra["series_end"] = _end_series(p, game_over=board.is_game_over(), lost=lost)
         extra["last"] = False  # the sitting goes on until the user leaves
     else:
         p["phase"] = "bot"
