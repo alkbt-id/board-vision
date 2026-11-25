@@ -146,7 +146,8 @@ def line_from(task: dict, step: int, board: chess.Board) -> list[dict]:
 
 def steps_of(board: chess.Board, moves: list[chess.Move]) -> list[dict]:
     """A line for the board, as far as its moves are legal: [{from, to, san, who: "you" | "he" (the side to move in
-    `board` is "you"), fen: the position after the move, capture}] — numbered arrows, and moves to step through."""
+    `board` is "you"), fen: the position after the move, capture, sign: "мат" | "шах" | "взятие" | ""}] — numbered
+    arrows, and moves to step through."""
     out = []
     b = board.copy(stack=False)
     me = b.turn
@@ -154,8 +155,11 @@ def steps_of(board: chess.Board, moves: list[chess.Move]) -> list[dict]:
         if m not in b.legal_moves:
             break
         u = m.uci()
-        out.append({"from": u[:2], "to": u[2:4], "san": b.san(m), "who": "you" if b.turn == me else "he",
-                    "capture": b.is_capture(m)})
+        san = b.san(m)
+        # the sign on the board: # mate, + check, ! a capture — a quiet move has none (it is no threat as such)
+        sign = "мат" if san.endswith("#") else "шах" if san.endswith("+") else "взятие" if b.is_capture(m) else ""
+        out.append({"from": u[:2], "to": u[2:4], "san": san, "who": "you" if b.turn == me else "he",
+                    "capture": b.is_capture(m), "sign": sign})
         b.push(m)
         out[-1]["fen"] = b.fen()
     return out

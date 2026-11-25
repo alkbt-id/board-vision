@@ -168,6 +168,11 @@ def test_a_wrong_move_in_a_task_is_shown_on_the_board(server, browser):
     his = page.evaluate("""() => [...document.querySelectorAll('#explain .exmv[data-line="yours"]')][1].className""")
     assert "he" in his
     assert len(auto) >= 4  # his answer is drawn too (red, with a sign), not only the solution
+    # his answer (whatever Stockfish plays): signed only when it checks, mates or takes — a quiet move is no threat
+    r = page.evaluate("window.__bv.decision().your_line[1]")
+    drawn = [s for s in shapes["auto"] if s["orig"] == r["from"] and s.get("dest") == r["to"]]
+    assert drawn and bool(drawn[0].get("customSvg")) == bool(r["sign"])
+    assert r["sign"] == ("мат" if "#" in r["san"] else "шах" if "+" in r["san"] else "взятие" if "x" in r["san"] else "")
     # step through the right line on the board, and back to the start
     page.click('#explain .exmv[data-line="best"][data-i="0"]')
     b = task.copy()

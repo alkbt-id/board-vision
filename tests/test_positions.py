@@ -64,3 +64,26 @@ def test_a_quiet_move_within_the_margin_counts(stockfish):
     # and a move that drops a piece does not: 1.e4 e5 2.Nf3 Nc6 3.Bc4 Nd4 4.Nxe5?? Qg5 (the knight and g2 hang)
     b = chess.Board("r1bqkbnr/pppp1ppp/8/4p3/2BnP3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4")
     assert not tasks.grade(task, 0, b, chess.Move.from_uci("f3e5"), loss=engine.loss)["ok"]
+
+
+# 2026-11-25 10:22: he threatened Nxc6 (the user marked it); the user played …c5?! (−15 points: Nd5 takes the outpost).
+# His answer Nd5 is a quiet move, no threat: the review must not sign it as one
+C5 = ("r1bqkbnr/5pp1/p1pp3p/3Np3/4P3/8/PPP2PPP/R1BQK1NR w KQkq - 0 9", "d5b4")
+C5_TASK = {"kind": "threat", "steps": [{"best": "g8f6", "accept": ["g8f6"], "reply": None, "margin": 10.0}],
+           "pv": ["g8f6", "f2f3", "d8c7", "b4d3"], "wrong": {}, "idea": "", "title": ""}
+
+
+def test_c5_his_quiet_answer_has_no_sign(stockfish):
+    board = _after(*C5)
+    mv = chess.Move.from_uci("c6c5")
+    assert not threats.own_move(board, mv)["threats"]  # nothing of his to mark after …c5
+    assert not tasks.grade(C5_TASK, 0, board, mv, loss=engine.loss)["ok"]  # but the move is not good enough
+    review = play._review(C5_TASK, 0, board, mv)
+    reply = review["your_line"][1]
+    assert reply["san"] == "Nd5" and reply["sign"] == ""
+
+
+def test_his_capture_and_check_answers_are_signed(stockfish):
+    board = _after(*ND5)
+    review = play._review(ND5_TASK, 0, board, chess.Move.from_uci("c3d5"))
+    assert review["your_line"][1]["san"] == "Rxb3" and review["your_line"][1]["sign"] == "взятие"

@@ -883,8 +883,11 @@ function showDecision(dec, then) {
 // the start of the review: the position before your move with the arrows
 function decisionShapes(dec) {
   const yours = marked({ orig: dec.your.from, dest: dec.your.to, brush: "grey" }, "extra");
+  // his answer to your move: signed + check, # mate, ! a capture; a quiet answer is a plain arrow — it is what he
+  // plays, not a threat you missed
   const reply = (dec.your_line || [])[1];
-  const his = reply ? [motifMark({ orig: reply.from, dest: reply.to, brush: "red" }, reply.san.includes("#") ? "мат" : reply.san.includes("+") ? "шах" : "")] : [];
+  const arrow = reply && { orig: reply.from, dest: reply.to, brush: "red" };
+  const his = !reply ? [] : reply.sign ? [motifMark(arrow, reply.sign)] : [arrow];
   return { user: [yours], auto: [...his, ...lineShapes((dec.line || []).slice(0, dec.draw ?? 99))] };
 }
 // show move `i` of a line ("best" — the solution, "yours" — your move and his answers) on the board; -1: the start
@@ -1142,7 +1145,7 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- the window's tests (tests/browser, a page opened with ?test): what the board shows ----------
 if (/[?&]test\b/.test(location.search)) {
-  window.__bv = { fen: () => cg.getFen(), phase: () => S.phase,
+  window.__bv = { fen: () => cg.getFen(), phase: () => S.phase, decision: () => S.dec,
     shapes: () => ({ user: cg.state.drawable.shapes, auto: cg.state.drawable.autoShapes }) };
 }
 

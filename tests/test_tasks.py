@@ -94,3 +94,14 @@ def test_why_worse_without_material_compares_evaluations():
     board = chess.Board()
     text = explain.why_worse(board, chess.Move.from_uci("g2g4"), [chess.Move.from_uci("e7e5")], -80, 30, "e4")
     assert "−0,8" in text and "+0,3" in text
+
+
+def test_a_line_carries_the_sign_of_each_move():
+    # a quiet move has no sign: the review's «!» means a capture, never «his answer» as such (2026-11-25: a quiet Nd5
+    # after …c5 was drawn with «!» and read as a threat)
+    board = chess.Board("r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 2 4")
+    signs = [(s["san"], s["sign"]) for s in tasks.steps_of(board, [chess.Move.from_uci(u) for u in ("h5f7",)])]
+    assert signs == [("Qxf7#", "мат")]
+    board = chess.Board("rnbqkbnr/ppp2ppp/8/3pp3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3")
+    moves = [chess.Move.from_uci(u) for u in ("f1b5", "c7c6", "e4d5", "c6b5")]
+    assert [s["sign"] for s in tasks.steps_of(board, moves)] == ["шах", "", "взятие", "взятие"]
