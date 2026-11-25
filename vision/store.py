@@ -9,6 +9,12 @@ attempts   one answer: arrows, what was found / missed / extra, time
 schedule   repeats of positions answered wrongly: step on the ladder and when due
 sessions   one sitting: the planned positions and when it started / ended
 meta       small key-value state (last download times)
+tasks      a series start prepared as a task for the move (vision/tasks.py): its kind (threat, tactic, quiet, trap,
+           strategy, endgame), the moves that count and the line, the rating on the game scale, Claude's explanation;
+           `status`: engine (Stockfish and Maia done, Claude not yet) / ready / rejected (Claude or the engine said no)
+decisions  one try at a task: right or not, the moves, the time, the task's rating then (for the «Решения» rating)
+skips      candidates looked at for a kind of task and not fit for it (they may still fit another kind)
+web_cache  answers of the Lichess API (puzzles, games, tablebase) already fetched (vision/sources/lichess_api.py)
 """
 
 import json
@@ -35,6 +41,18 @@ CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY, started INTEGER NOT NULL, ended INTEGER, items TEXT NOT NULL, summary TEXT
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS tasks (
+  item INTEGER PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL, rating INTEGER, origin TEXT,
+  data TEXT NOT NULL, note TEXT, added INTEGER NOT NULL, prepared INTEGER
+);
+CREATE INDEX IF NOT EXISTS tasks_pick ON tasks (status, kind);
+CREATE TABLE IF NOT EXISTS decisions (
+  id INTEGER PRIMARY KEY, item INTEGER NOT NULL, session TEXT, series INTEGER, ts INTEGER NOT NULL, kind TEXT,
+  ok INTEGER NOT NULL, moves TEXT, ms INTEGER, rating INTEGER, repeat INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS decisions_item ON decisions (item);
+CREATE TABLE IF NOT EXISTS web_cache (key TEXT PRIMARY KEY, body TEXT NOT NULL, ts INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS skips (kind TEXT NOT NULL, ref TEXT NOT NULL, reason TEXT, PRIMARY KEY (kind, ref));
 """
 DAY = 86_400_000
 LADDER = [1, 3, 7, 14, 30]  # days until the next repeat of a position answered wrongly, step by step

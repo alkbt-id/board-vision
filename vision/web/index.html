@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="/static/vendor/board.lichess-brown.css">
 <link rel="stylesheet" href="/static/vendor/pieces.merida.css">
 <!-- ?v=: the iPad keeps static files cached; bump it (here and on app.js below) when app.css or app.js changes -->
-<link rel="stylesheet" href="/static/app.css?v=29">
+<link rel="stylesheet" href="/static/app.css?v=30">
 </head>
 <body>
 <div class="app">
@@ -46,6 +46,8 @@
     </section>
     <!-- while you play: the moves of the game fragment, as on Lichess -->
     <aside class="moves" id="moves" hidden aria-label="Ходы">
+      <!-- a task's review: the kind, the solution, the idea, why your move is worse (in place of the moves) -->
+      <div class="explain" id="explain" hidden aria-live="polite"></div>
       <div class="moves-list" id="moves-list"></div>
     </aside>
     <aside class="side">
@@ -53,6 +55,6 @@
     </aside>
   </main>
 </div>
-<script type="module" src="/static/app.js?v=47"></script>
+<script type="module" src="/static/app.js?v=48"></script>
 </body>
 </html>

@@ -11,7 +11,7 @@
   POST /api/log       an event from the window (vision/events.py lists the kinds)
   POST /api/refresh   download new positions now
   GET  /api/history   results per day
-  GET  /api/progress  the progress chart: one point per session
+  GET  /api/progress  the progress charts: the attention rating per position, the «Решения» rating per task
   the play routes run in a worker thread: the bot thinks there, not on the event loop
 """
 
@@ -27,8 +27,8 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import bot, config, engine, events, migrate, play, session, sources, store
-from .sources import tactics
+from . import bot, config, engine, events, migrate, play, session, sources, store, tasks
+from .sources import prepare, tactics
 
 WEB = Path(__file__).parent / "web"
 REFRESH_EVERY_MS = 12 * 3600 * 1000
@@ -47,7 +47,7 @@ def state() -> dict:
         "counts": store.counts(), "ready": sources.ready(), "import": dict(sources.STATUS),
         "answered": store.answered_count(), "today": (session.history(1) or [None])[0],
         "users": {"lichess": config.lichess_user(), "chesscom": config.chesscom_user()},
-        "level": play.level(), "best": play.best(),
+        "level": play.level(), "best": play.best(), "tasks": prepare.status(),
     }
 
 
@@ -129,7 +129,7 @@ async def get_history(_: Request):
 
 
 async def get_progress(_: Request):
-    return JSONResponse(session.progress())
+    return JSONResponse({**session.progress(), "decisions": await run_in_threadpool(tasks.progress)})
 
 
 @contextlib.asynccontextmanager
@@ -151,6 +151,7 @@ async def lifespan(_app):
         migrate.sources_v3()  # other people's games from move 9 on (once)
         if refresh or not store.counts().get("puzzle"):
             sources.refresh()
+        prepare.start_background()  # tasks for the move: Stockfish, Maia and Claude, a stock kept full
 
     threading.Thread(target=background, name="startup", daemon=True).start()
     try:

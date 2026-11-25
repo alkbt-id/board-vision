@@ -627,21 +627,37 @@ function drawCharts() {
   if (pts.length < 2) {
     c1.innerHTML = `<p class="muted">График появится после двух позиций.</p>`;
     if (c2) c2.textContent = "";
+    drawDecisions();
     return;
   }
-  lineChart(c1, pts, { key: "rating", height: 150, title: "По позициям", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
+  lineChart(c1, pts, { key: "rating", height: 150, title: "Внимание по позициям", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
+  drawDecisions();
   const tp = pts.filter((p) => p.median_s != null);
   if (c2 && tp.length > 1) lineChart(c2, tp, { key: "median_s", height: 80, title: "Секунд на позицию", fmt: (v) => String(Math.round(v)), minSpan: 6, step: 2, floor: 0 });
 }
+function drawDecisions() {
+  const el = $("#ch-dec");
+  if (!el) return;
+  const dp = progress?.decisions?.points || [];
+  if (dp.length < 2) { el.innerHTML = `<p class="muted">График решений появится после двух задач.</p>`; return; }
+  lineChart(el, dp, { key: "rating", height: 110, title: "Решения по задачам", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
+}
+function heroBlock(now, prev, n, label, sub) {
+  const delta = n ? now - prev : 0;
+  const cls = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+  const mark = delta > 0 ? "▲" : delta < 0 ? "▼" : "•";
+  const deltaText = n ? `${mark} ${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${Math.abs(delta)} ${sub}` : "стартовый рейтинг";
+  return `<div class="hero"><div class="hero-num">${now}</div><div class="hero-sub">${label}</div><div class="delta ${cls}">${deltaText}</div></div>`;
+}
+// two numbers: attention (your arrows) and decisions (your moves in tasks)
 function heroHTML(sub) {
   const pts = progress?.points || [];
   const now = progress?.rating ?? 1500;
   const prev = pts.length > 1 ? pts[pts.length - 2].rating : progress?.start ?? 1500;
-  const delta = pts.length ? now - prev : 0;
-  const cls = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
-  const mark = delta > 0 ? "▲" : delta < 0 ? "▼" : "•";
-  const deltaText = pts.length ? `${mark} ${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${Math.abs(delta)} ${sub}` : "стартовый рейтинг";
-  return `<div class="hero"><div class="hero-num">${now}</div><div class="hero-sub">рейтинг внимательности</div><div class="delta ${cls}">${deltaText}</div></div>`;
+  const d = progress?.decisions, dp = d?.points || [];
+  const dnow = d?.rating ?? 1300;
+  const dprev = dp.length > 1 ? dp[dp.length - 2].rating : d?.start ?? dnow;
+  return `<div class="heroes">${heroBlock(now, prev, pts.length, "внимание", sub)}${heroBlock(dnow, dprev, dp.length, "решения", sub.replace("позицию", "задачу"))}</div>`;
 }
 async function loadProgress() {
   try { progress = await api("/api/progress"); } catch { progress = null; }
@@ -651,7 +667,8 @@ const RULES = `
   <details class="rules"><summary>Как это работает</summary>
     <p>Соперник делает ход. 1) Нарисуй его угрозы сейчас — стрелки от его фигур к твоим, которые он может выиграть, и на поле мата. И тапни каждую его фигуру, которую ты можешь выиграть прямо сейчас (взять и остаться в плюсе после всех разменов, или выиграть шахом с вилкой; на Mac — или правый клик): на ней появится фиолетовый кружок. Твой мат, в том числе в 2–3 хода, — кружок на его короле. 2) Нарисуй свой ход — стрелку от своей фигуры. 3) Нарисуй его угрозы после твоего хода — стрелки от его фигур: каждый его шах (стрелку хода с шахом), что он сможет взять с выигрышем, мат, вилки и связки, которые выигрывают материал. 4) «Хожу». Ошибки, если они есть, покажутся все вместе, потом ходит соперник. Значки на пропущенных ходах: + шах, # мат, вилка (столовая) — вилка, цепочка — связка, глаз — вскрытое нападение, ! — взятие.</p>
     <p>Стрелка: протяни мышью (любой кнопкой) или пальцем, или коснись одной клетки, потом другой. Промахнулся — ↶ над доской, Backspace или та же стрелка ещё раз. Закончил — кнопка в цветной полосе над доской или Enter.</p>
-    <p>Рейтинг растёт за верные ответы и сильнее — на трудных позициях. Повторы позиций не считаются.</p>
+    <p>Твой ход — одна попытка. Позиция бывает тихой, с его угрозой, с ловушкой, на тактику (засчитывается весь вариант), на стратегическое решение или эндшпиль — какая, не говорится. Ошибся — на доске верное решение, рядом объяснение, потом партия идёт дальше с твоего хода.</p>
+    <p>Два числа: «внимание» — по твоим стрелкам, «решения» — по ходам в задачах. Оба растут за верные ответы и сильнее — на трудных позициях. Трудность задачи — по рейтингу игроков, которые её решают (Maia 1100–1900); задачи подбираются чуть легче твоего уровня. Повторы не считаются.</p>
     <p>Серия: соперник ходит — отмечаешь угрозы — ходишь сам — отвечает бот уровня 1300 — снова отмечаешь… Серия без промахов делает следующую на ход длиннее, две серии с промахами подряд — на ход короче. Длина 1 — одна позиция.</p>
   </details>`;
 
@@ -675,6 +692,7 @@ async function showStart() {
   panel.innerHTML = `
     ${heroHTML("за последнюю позицию")}
     <div class="chart" id="ch-rating"></div>
+    <div class="chart" id="ch-dec"></div>
     <div class="chart" id="ch-time"></div>
     <button class="btn primary big" id="go" disabled>Начать</button>
     <p class="muted center" id="level"></p>
@@ -695,7 +713,10 @@ async function refreshState() {
   }
   const imp = st.import;
   statusEl.className = "status";
-  statusEl.innerHTML = imp.running ? `<span class="spin"></span>готовлю позиции` : "";
+  const tk = st.tasks || {};
+  statusEl.innerHTML = imp.running ? `<span class="spin"></span>готовлю позиции`
+    : tk.text ? `<span class="spin"></span>готовлю задачи: ${tk.ready} из ${tk.stock}` : "";
+  statusEl.title = tk.error ? `Задачи не готовятся: ${tk.error}` : "";
   const go = $("#go");
   if (S.phase === "start" && go) {
     go.disabled = !st.ready;
@@ -703,7 +724,7 @@ async function refreshState() {
     const lv = $("#level");
     if (lv) lv.textContent = `Длина серии: ${st.level} ${plural(st.level, "ход", "хода", "ходов")}${st.best ? ` · рекорд ${st.best}` : ""}`;
   }
-  if (imp.running) stateTimer = setTimeout(refreshState, 3000);
+  if (imp.running || tk.text) stateTimer = setTimeout(refreshState, imp.running ? 3000 : 15000);
 }
 
 // ---------- the training: series of checks (vision/play.py) ----------
@@ -744,6 +765,7 @@ async function startPlay() {
 
 // a new series or the bot's answer: the move is shown, then the next step
 function playShow(v) {
+  hideExplain();
   S.v = v;
   S.index = v.checks;
   S.size = v.budget;
@@ -808,12 +830,22 @@ async function commitMove() {
   try { v = await api("/api/play/commit", { play: S.sid, move: mv.from + mv.to, arrows: drawn, ms: took }); }
   catch (e) { S.phase = "plan"; flashTask(e.message); return; }
   S.v = v;
-  S.marks = [...(S.marks || []), (S.step1ok ?? true) && !!v.own.result.ok]; // one dot a turn: both steps right
+  const dec = v.decision || null;
+  S.marks = [...(S.marks || []), (S.step1ok ?? true) && !!v.own.result.ok && (!dec || dec.ok)]; // one dot a turn
   S.step1ok = null;
   myMove = null;
   arrows = [];
   wrap.classList.add("locked");
-  // the board: your move played; your arrows (✓ green right, ✕ grey extra); what you missed in red with !
+  // a task: right — a word in the strip while he answers; wrong — first its review on the position before your move
+  S.decNote = dec?.ok ? (dec.done ? `Решено${dec.title ? ` · ${dec.title}` : ""}` : "Верно — дальше") : "";
+  if (dec && !dec.ok) return showDecision(dec, () => afterMove(v, mv, drawn, capture));
+  afterMove(v, mv, drawn, capture);
+}
+// your move played on the board; your arrows (✓ green right, ✕ grey extra); what you missed in red with !
+function afterMove(v, mv, drawn, capture) {
+  hideExplain();
+  cg.setShapes([]);
+  cg.setAutoShapes([]);
   cg.set({ fen: v.fen, lastMove: [mv.from, mv.to], turnColor: v.orientation === "white" ? "black" : "white" });
   play(capture ? "Capture" : "Move");
   if (v.own?.san && v.own?.before) addMove(v.own.before, v.own.san);
@@ -840,6 +872,42 @@ async function commitMove() {
   if (v.phase === "next") return seriesEnd(v, review);
   review();
   syncMode();
+}
+// a task's review (your move was not right): on the position before your move — your move grey with ✕, the solution
+// numbered (blue yours, red his); beside the board the kind, the idea and why your move is worse; «Дальше» plays
+// your move and the turn goes on
+function showDecision(dec, then) {
+  S.phase = "review";
+  wrap.classList.add("locked");
+  const yours = marked({ orig: dec.your.from, dest: dec.your.to, brush: "grey" }, "extra");
+  S.reviewShapes = [yours];
+  cg.setShapes([yours]);
+  cg.setAutoShapes(lineShapes((dec.line || []).slice(0, dec.draw ?? 99)));
+  showExplain(dec);
+  S.review = { kind: "fail", text: `${dec.name}: верно ${dec.best_san}`, label: "Дальше", onNext: () => { log("next_click", { ms: ms(), to: "move", how: "button" }); then(); } };
+  syncMode();
+}
+function showExplain(dec) {
+  const el = $("#explain");
+  if (!el) return;
+  const all = (dec.line || []).map((st) => figurine(st.san)), n = dec.draw ?? all.length;
+  const rest = all.slice(n).join(" ");
+  el.innerHTML = `<span class="ex-kind">${esc(dec.name)}</span>
+    ${dec.title ? `<h3>${esc(dec.title)}</h3>` : ""}
+    <p class="ex-best">Верно: <b>${all.slice(0, n).join(" ") || figurine(dec.best_san)}</b>${rest ? ` <span class="ex-rest">дальше ${rest}</span>` : ""}</p>
+    ${dec.idea ? `<p>${esc(dec.idea)}</p>` : ""}
+    <p class="ex-why"><b>Твой ход ${figurine(dec.your.san)}.</b> ${esc(dec.why || "")}</p>`;
+  el.hidden = false;
+  $("#moves").classList.add("explaining");
+  el.scrollTop = 0;
+}
+function hideExplain() {
+  const el = $("#explain");
+  if (!el || el.hidden) return;
+  el.hidden = true;
+  el.innerHTML = "";
+  $("#moves").classList.remove("explaining");
+  renderMoves();
 }
 // the strip's word on a check: short, the board shows the rest
 function verdict(res, n) {
@@ -909,7 +977,8 @@ async function check(move = null) {
 // a clean check is not stopped on: its dot fills and the game goes on (a new series says its length in the strip);
 // only a check with a mistake stops for the review
 function goOn(v) {
-  S.note = seriesNote(v);
+  S.note = [S.decNote, seriesNote(v)].filter(Boolean).join(" · ");
+  S.decNote = "";
   nextSeries("auto");
 }
 function seriesNote(v) {
@@ -944,6 +1013,7 @@ function seriesEnd(v, review) {
 }
 async function nextSeries(how = "button") {
   if (S.phase !== "review") return;
+  if (S.decNote) { S.note = S.decNote; S.decNote = ""; }
   log("next_click", { ms: ms(), how: typeof how === "string" ? how : "button" });
   S.reviewShapes = null;
   bm.btn.disabled = true;
@@ -988,6 +1058,7 @@ async function showSummary(s) {
     ${heroHTML("за эту сессию")}
     <p class="muted">Верно ${s.ok} из ${s.checks} · серий без промахов ${s.clean} из ${s.series} · длина серии ${s.level}</p>
     <div class="chart" id="ch-rating"></div>
+    <div class="chart" id="ch-dec"></div>
     <div class="chart" id="ch-time"></div>
     <button class="btn primary big" id="again">Ещё</button>
     <button class="btn quiet" id="home">На главный</button>`;

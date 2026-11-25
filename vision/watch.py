@@ -12,7 +12,10 @@ import time
 from . import config
 from .session import MOTIF_NAME
 
-SOURCE = {"own": "твоя партия", "db": "чужая партия", "puzzle": "задача Lichess", "missed": "зевок в партии"}
+SOURCE = {"own": "твоя партия", "db": "чужая партия", "puzzle": "задача Lichess", "missed": "зевок в партии",
+          "neilgd": "сборник позиционных задач", "puzzle_trap": "задача Lichess наоборот"}
+KIND = {"threat": "его угроза", "tactic": "тактика", "quiet": "тихая", "trap": "ловушка", "strategy": "стратегия",
+        "endgame": "эндшпиль"}
 WHY = {"defended": "фигура защищена", "not_attacked": "не под ударом", "wrong_attacker": "бьёт не эта фигура",
        "not_winnable": "её не выиграть"}
 
@@ -95,8 +98,27 @@ def line(e: dict) -> str | None:
             motif = f" ({MOTIF_NAME.get(str(e['motif']), e['motif'])})" if e.get("motif") else ""
             rep = " · повтор" if e.get("repeat") else ""
             n = e.get("length", 1)
+            task = (f" · задача: {KIND.get(str(e['task_kind']), e['task_kind'])} {e.get('task_rating')}"
+                    f" «{e.get('task_title', '')}»") if e.get("task_kind") else ""
             return (f"{t} ── серия {e.get('no')}: {n} {'ход' if n == 1 else 'хода' if n < 5 else 'ходов'} · "
-                    f"{SOURCE.get(src, src)}{rep} · угроз {e.get('threats')}{motif}")
+                    f"{SOURCE.get(src, src)}{rep} · угроз {e.get('threats')}{motif}{task}")
+        case "decision":
+            kind = KIND.get(str(e.get("task_kind")), e.get("task_kind"))
+            res = "✔" if e.get("ok") else "✘"
+            more = "" if e.get("done") else " — дальше по варианту"
+            return f"{t}   задача ({kind}), ход {int(e.get('step', 0)) + 1}: {e.get('move')} → {res}{more}"
+        case "task_ready":
+            return (f"{t} ✎ задача готова: {KIND.get(str(e.get('task_kind')), e.get('task_kind'))} {e.get('rating')}"
+                    f" «{e.get('title', '')}» ({e.get('origin')})")
+        case "task_later":
+            return f"{t} ✎ задача отложена: {KIND.get(str(e.get('task_kind')), e.get('task_kind'))} {e.get('rating')} — пока трудная"
+        case "task_rejected":
+            return None if not str(e.get("reason", "")).startswith("Claude") else \
+                f"{t} ✎ Claude отклонил задачу ({KIND.get(str(e.get('task_kind')), e.get('task_kind'))}): {e.get('reason')}"
+        case "prepare_short":
+            return f"{t} ✎ задач вида «{KIND.get(str(e.get('task_kind')), e.get('task_kind'))}» не нашлось, позже ещё"
+        case "prepare_error":
+            return f"{t} ⚠ подготовка задач: {e.get('text')}"
         case "bot_move":
             return f"{t}   бот: {e.get('san')}"
         case "own_check":

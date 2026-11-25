@@ -163,6 +163,41 @@ def evaluate(board: chess.Board, pov: chess.Color) -> int | None:
     return info["score"].pov(pov).score(mate_score=10_000)
 
 
+def line(board: chess.Board, pov: chess.Color) -> tuple[int | None, list[chess.Move]]:
+    """(Stockfish's evaluation of `board` for `pov` in centipawns, a mate as ±10000; its main line). (None, []) without
+    the engine or when the game is over."""
+    global _engine
+    if board.is_game_over():
+        return None, []
+    with _lock:
+        engine = _open()
+        if engine is None:
+            return None, []
+        try:
+            info = engine.analyse(board, LIMIT)
+        except chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError:
+            _engine = None
+            return None, []
+    return info["score"].pov(pov).score(mate_score=10_000), list(info.get("pv") or [])
+
+
+def loss(before: chess.Board, move: chess.Move) -> float | None:
+    """The winning chances (points of 100, vision/tasks.win_pct) `move` gives up against the best move in `before`,
+    both searched now to the same depth; None without the engine."""
+    from .tasks import win_pct
+
+    me = before.turn
+    best, _ = line(before, me)
+    after = before.copy(stack=False)
+    after.push(move)
+    if after.is_checkmate():
+        return 0.0
+    now = 0 if after.is_game_over() else line(after, me)[0]
+    if best is None or now is None:
+        return None
+    return max(0.0, win_pct(best) - win_pct(now))
+
+
 def close() -> None:
     global _engine
     with _lock:

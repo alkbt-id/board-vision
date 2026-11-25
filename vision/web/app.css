@@ -246,6 +246,22 @@ details.rules p { margin: 8px 0 0; }
 .mv { display: flex; align-items: center; padding: 9px 12px; color: var(--ink); white-space: nowrap; }
 .mv.empty { color: var(--muted); }
 .mv.last { background: var(--accent-soft) !important; color: var(--ink); font-weight: 700; }
+/* a task's review in place of the moves: the kind, the right move, the idea, why your move is worse */
+.explain { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 14px; font: 14px/1.45 var(--font-body);
+  scrollbar-width: thin; }
+.moves.explaining .moves-list { display: none; }
+.explain .ex-kind { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--bad-soft); color: var(--bad);
+  font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+.explain h3 { margin: 8px 0 6px; font: 700 17px/1.25 var(--font-body); }
+.explain .ex-best { margin: 0 0 8px; font-weight: 600; }
+.explain .ex-best b { color: var(--good); }
+.explain .ex-rest { color: var(--muted); font-weight: 400; }
+.explain p { margin: 0 0 10px; }
+.explain .ex-why { padding-top: 10px; border-top: 1px solid var(--line); }
+.explain .ex-why b { color: var(--bad); }
+/* the start screen: two numbers side by side — attention and decisions */
+.heroes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.heroes .hero-num { font-size: 46px; }
 /* a tall window: the moves under the board, in lines like a scoresheet — «12. ♘f3 ♗e7  13. …» */
 .app.playing.moves-below .layout { grid-template-columns: auto; grid-template-rows: auto auto; align-content: start; gap: 14px; }
 .moves-below .moves { justify-self: center; }
@@ -275,7 +291,9 @@ details.rules p { margin: 8px 0 0; }
 .app.side-below #level { grid-column: 1; grid-row: 3; }
 .app.side-below details.rules { grid-column: 1; grid-row: 4; }
 .app.side-below #ch-rating { grid-column: 2; grid-row: 1 / span 2; }
-.app.side-below #ch-time { grid-column: 2; grid-row: 3 / span 2; }
+.app.side-below #ch-time { grid-column: 2; grid-row: 4 / span 1; }
+.app.side-below #ch-dec { grid-column: 2; grid-row: 3 / span 1; }
+.app.side-below .heroes { grid-column: 1; grid-row: 1; }
 
 /* ---------- the frame around the board, as on a real board: the frame in the dark square's colour, a thin line of the
    light square's colour between it and the squares, the coordinates in the middle of the frame on all sides */
