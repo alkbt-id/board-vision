@@ -643,23 +643,6 @@ function drawDecisions() {
   const dp = [{ ts: pts.length ? pts[0].ts - 1 : Date.now(), rating: d?.start ?? 1300 }, ...pts];
   lineChart(el, dp, { key: "rating", height: 110, title: "Решения по задачам", fmt: (v) => String(Math.round(v)), minSpan: 80, step: 20 });
 }
-function heroBlock(now, prev, n, label, sub) {
-  const delta = n ? now - prev : 0;
-  const cls = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
-  const mark = delta > 0 ? "▲" : delta < 0 ? "▼" : "•";
-  const deltaText = n ? `${mark} ${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${Math.abs(delta)} ${sub}` : "стартовый рейтинг";
-  return `<div class="hero"><div class="hero-num">${now}</div><div class="hero-sub">${label}</div><div class="delta ${cls}">${deltaText}</div></div>`;
-}
-// two numbers: attention (your arrows) and decisions (your moves in tasks)
-function heroHTML(sub) {
-  const pts = progress?.points || [];
-  const now = progress?.rating ?? 1500;
-  const prev = pts.length > 1 ? pts[pts.length - 2].rating : progress?.start ?? 1500;
-  const d = progress?.decisions, dp = d?.points || [];
-  const dnow = d?.rating ?? 1300;
-  const dprev = dp.length > 1 ? dp[dp.length - 2].rating : d?.start ?? dnow;
-  return `<div class="heroes">${heroBlock(now, prev, pts.length, "внимание", sub)}${heroBlock(dnow, dprev, dp.length, "решения", sub.replace("позицию", "задачу"))}</div>`;
-}
 async function loadProgress() {
   try { progress = await api("/api/progress"); } catch { progress = null; }
 }
@@ -690,14 +673,19 @@ async function showStart() {
   cg.setShapes([]);
   cg.setAutoShapes([]);
   await loadProgress();
+  // two groups: the charts, and the button with the series length and the rules (beside each other under the board
+  // in a tall window, one under the other beside the board)
   panel.innerHTML = `
-    ${heroHTML("за последнюю позицию")}
-    <div class="chart" id="ch-rating"></div>
-    <div class="chart" id="ch-dec"></div>
-    <div class="chart" id="ch-time"></div>
-    <button class="btn primary big" id="go" disabled>Начать</button>
-    <p class="muted center" id="level"></p>
-    ${RULES}`;
+    <div class="start-charts">
+      <div class="chart" id="ch-rating"></div>
+      <div class="chart" id="ch-dec"></div>
+      <div class="chart" id="ch-time"></div>
+    </div>
+    <div class="start-actions">
+      <button class="btn primary big" id="go" disabled>Начать</button>
+      <p class="muted center" id="level"></p>
+      ${RULES}
+    </div>`;
   $("#go").addEventListener("click", startPlay);
   layout(); // the panel's height is known now: beside the board or under it (and the charts drawn at its width)
   await refreshState();
@@ -1057,7 +1045,6 @@ async function showSummary(s) {
   cg.setAutoShapes([]);
   await loadProgress();
   panel.innerHTML = `
-    ${heroHTML("за эту сессию")}
     <p class="muted">Верно ${s.ok} из ${s.checks} · серий без промахов ${s.clean} из ${s.series} · длина серии ${s.level}</p>
     <div class="chart" id="ch-rating"></div>
     <div class="chart" id="ch-dec"></div>
